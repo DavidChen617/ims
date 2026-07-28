@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\Domain.csproj" />
+    <ProjectReference Include="..\..\MessageContract\MessageContract.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Davish.Sendr.Abstractions" />
+    <PackageReference Include="Davish.Sendr.Notification" />
+  </ItemGroup>
+
+</Project>
