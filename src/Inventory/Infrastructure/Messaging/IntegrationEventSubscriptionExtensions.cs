@@ -1,4 +1,3 @@
-using Application.BehaviorDecorator;
 using Davish.Sendr;
 using MessageContract;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,14 +8,12 @@ public static class IntegrationEventSubscriptionExtensions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddIntegrationEventSubscription<TEvent, THandler>()
+        public IServiceCollection AddIntegrationEventSubscription<TEvent, THandler>(
+            Action<NotificationHandlerEntryOptions<TEvent>>? configure = null)
             where TEvent : INotificationIntegrationEvent
             where THandler : class, INotificationHandler<TEvent>
         {
-            // InboxCommitDecorator 包在每個 handler 外面,處理完就自動
-            // MarkProcessedAsync + CommitAsync,handler 自己不用再管這件事。
-            services.AddNotificationHandler<TEvent>(
-                x => x.Handler.Sequence.With<THandler>(h => h.Decorator.With<InboxCommitDecorator>()));
+            services.AddNotificationHandler<TEvent>(x => x.Handler.Sequence.With<THandler>(configure));
 
             services.Configure<IntegrationEventSubscriptionInfo>(
                 o => o.EventTypes[typeof(TEvent).Name] = typeof(TEvent));

@@ -1,4 +1,5 @@
 using Application;
+using Application.BehaviorDecorator;
 using Application.Stocks;
 using Application.Stocks.EventHandling;
 using Confluent.Kafka;
@@ -15,6 +16,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel;
 
+using Application.Abstracts;
 namespace Infrastructure;
 
 public static class Dependency
@@ -55,14 +57,17 @@ public static class Dependency
                 .AddHostedService<OutboxProcessor>()
                 .AddHostedService<IntegrationEventConsumer>()
                 .AddSendrNotification()
+                // InboxCommitDecorator 包在每個 handler 外面,處理完就自動
+                // MarkProcessedAsync + CommitAsync——是這裡、每個訂閱各自決定要套用,
+                // 不是 AddIntegrationEventSubscription 本身綁死的行為。
                 .AddIntegrationEventSubscription<InboundOrderCreatedIntegrationEvent,
-                    InboundOrderCreatedIntegrationEventHandler>()
+                    InboundOrderCreatedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
                 .AddIntegrationEventSubscription<InboundOrderRejectedIntegrationEvent,
-                    InboundOrderRejectedIntegrationEventHandler>()
+                    InboundOrderRejectedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
                 .AddIntegrationEventSubscription<OutboundOrderCreatedIntegrationEvent,
-                    OutboundOrderCreatedIntegrationEventHandler>()
+                    OutboundOrderCreatedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
                 .AddIntegrationEventSubscription<OutboundOrderRejectedIntegrationEvent,
-                    OutboundOrderRejectedIntegrationEventHandler>()
+                    OutboundOrderRejectedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
                 .AddNpgsqlDataSource(configuration.GetConnectionString("DefaultConnection")!);
 
             return services;
