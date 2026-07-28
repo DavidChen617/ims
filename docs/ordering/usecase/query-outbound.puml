@@ -1,0 +1,58 @@
+@startuml Query Outbound Orders (Pending List / Detail)
+
+title 取得尚未處理的出庫清單／出庫單明細（一般員工＋倉庫管理者用 WarehouseStaffOnly 版；總管理者另有跨倉庫版本）
+
+actor "一般員工 / 倉庫管理者" as Staff
+actor "總管理者" as Admin
+
+box "Ordering.Api" #LightBlue
+    participant "ListPendingOutboundOrdersEndpoint" as PendingEndpoint
+    participant "GetOutboundOrderEndpoint" as DetailEndpoint
+    participant "GetOutboundOrderForAdminEndpoint" as AdminDetailEndpoint
+    participant "ICurrentUser" as CurrentUser
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "ListPendingOutboundOrders\nQueryHandler" as PendingHandler
+    participant "GetOutboundOrderQueryHandler" as DetailHandler
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IOutboundOrderReader" as Reader
+end box
+
+database "ordering_db" as DB
+
+== 待處理清單（限自己倉庫，只會看到已經是 Pending 的單，Processing 的單看不到）==
+Staff -> PendingEndpoint : GET /api/v1/outbound/pending
+PendingEndpoint -> Sender : SendAsync(ListPendingOutboundOrdersQuery())
+Sender -> PendingHandler : HandleAsync(query, ct)
+PendingHandler -> CurrentUser : WarehouseId
+PendingHandler -> Reader : ListPendingAsync(currentUser.WarehouseId, ct)
+Reader -> DB : select from outbound_orders\nwhere warehouse_id = @WarehouseId and status = 'Pending'
+DB --> Reader : rows
+Reader --> PendingHandler : IReadOnlyList<PendingOutboundOrderDto>
+PendingHandler --> Staff : 200 OK
+
+== 明細（限自己倉庫，可查任何狀態，包含 Processing/Rejected）==
+Staff -> DetailEndpoint : GET /api/v1/outbound/{id}
+DetailEndpoint -> Sender : SendAsync(GetOutboundOrderQuery(id))
+Sender -> DetailHandler : HandleAsync(query, ct)
+DetailHandler -> CurrentUser : WarehouseId
+DetailHandler -> Reader : GetByIdAsync(id, currentUser.WarehouseId, ct)
+Reader -> DB : select ... where id = @Id\nand (@WarehouseId is null or warehouse_id = @WarehouseId)
+alt 這張單不屬於自己倉庫，或不存在
+    Reader --> DetailHandler : Result.Failure
+    DetailHandler --> Staff : 404 Not Found
+else 找到
+    Reader --> DetailHandler : OutboundOrderDto
+    DetailHandler --> Staff : 200 OK
+end
+
+== 明細（跨倉庫，總管理者）==
+Admin -> AdminDetailEndpoint : GET /api/v1/outbound/admin/{id}
+AdminDetailEndpoint -> Sender : SendAsync(GetOutboundOrderQuery(id, warehouseId: null))
+Sender --> Admin : 200 OK
+
+@enduml

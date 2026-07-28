@@ -1,0 +1,63 @@
+@startuml Resolve Product/Warehouse Names via BFF
+
+title 方案 B：BFF 同步聚合（新服務，查詢當下才呼叫 Ordering/Organization 補名稱）
+
+actor "總管理者 / 倉庫管理者 / 一般員工" as Caller
+
+box "Bff.Api（新服務，無自己的資料庫）" #LightBlue
+    participant "BffStocksEndpoint" as Bff
+end box
+
+box "Inventory" #LightYellow
+    participant "ListStocksEndpoint" as InventoryApi
+end box
+
+box "Ordering" #WhiteSmoke
+    participant "新增：GET products?ids=... (批量)" as OrderingApi
+end box
+
+box "Organization" #Pink
+    participant "GET warehouse（現有，查全部）" as OrgApi
+end box
+
+Caller -> Bff : GET /bff/stocks?warehouseId=&productNo=&productName=&page=&size=\n(Authorization: Bearer <jwt>)
+
+Bff -> InventoryApi : GET /api/v1/stocks?warehouseId=&page=&size=\n（轉發同一個 JWT）
+note right of Bff
+  文字篩選（productNo/productName）沒辦法直接轉給
+  Inventory —— 它只認 productId。要嘛 BFF 自己先
+  查 Ordering 拿到符合的 productId 清單再傳給
+  Inventory，要嘛 Inventory 端先回全部再由 BFF
+  篩選（分頁邏輯會變得很尷尬，不建議）。
+end note
+InventoryApi --> Bff : [{ productId, warehouseId, quantity, cumulativeShipped }]
+
+Bff -> Bff : 收集出現過的 productId / warehouseId（去重）
+
+par 平行呼叫，減少總延遲
+    Bff -> OrderingApi : GET products?ids=p1,p2,p3...\n（轉發同一個 JWT）
+    OrderingApi --> Bff : [{ productId, productNo, name, unit }]
+else
+    Bff -> OrgApi : GET warehouse\n（轉發同一個 JWT，倉庫數量少，直接全拿）
+    OrgApi --> Bff : [{ warehouseId, name }]
+end
+
+Bff -> Bff : 用記憶體 Dictionary 把三份結果 join 起來
+
+alt Ordering 或 Organization 呼叫失敗/逾時
+    Bff -> Bff : 該筆名稱補 null 或「未知」，庫存數字照樣回傳\n（優雅降級，不讓名稱查詢失敗拖垮整個請求）
+end
+
+Bff --> Caller : 200 OK\n[{ productNo, productName, unit, warehouseName, quantity, cumulativeShipped }]
+
+note over Bff
+  好處：Inventory/Ordering/Organization 三個服務
+  本身完全不用改資料模型或加 Kafka，只需要
+  Ordering 多一個批量查詢 API。
+  代價：BFF 依賴另外兩個服務「當下活著」，
+  它們慢，這個查詢就慢；它們掛，這個查詢
+  就要靠優雅降級。跟方案 A 比，這裡是
+  「即時但脆弱」換「多一份快取但強韌」。
+end note
+
+@enduml

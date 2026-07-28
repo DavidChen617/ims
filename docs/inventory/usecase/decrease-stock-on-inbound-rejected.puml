@@ -1,0 +1,67 @@
+@startuml Decrease Stock on InboundOrderRejected
+
+title 消費 InboundOrderRejectedIntegrationEvent → 撤銷剛才的 Increase
+
+box "Ordering" #WhiteSmoke
+    participant "OutboxProcessor" as OrderingOutbox
+end box
+
+queue "Kafka\ntopic: ordering.events" as Kafka
+
+box "Inventory" #LightYellow
+    participant "IntegrationEventConsumer" as Consumer
+    participant "IPublisher" as Publisher
+    participant "InboundOrderRejected\nIntegrationEventHandler" as Handler
+    participant "InboxGuard" as Inbox
+    participant "IStockRepository" as Repo
+    participant "Stock" as StockAggregate
+end box
+
+database "inventory_db" as DB
+
+OrderingOutbox -> Kafka : produce\n（管理員拒絕已入庫的單，庫存已經被加過了）
+activate Consumer
+Kafka -> Consumer : consumer.Consume()
+
+Consumer -> Inbox : BeginIfNotProcessedAsync(uow, inbox, notification.Id, ct)
+alt 已處理過
+    Inbox --> Consumer : false
+    note right of Consumer : 直接 return，不呼叫 PublishAsync
+else 尚未處理
+    Inbox --> Consumer : true（transaction 保持開啟）
+
+    Consumer -> Publisher : PublishAsync(notification, ct)
+    Publisher -> Handler : HandleAsync(notification, ct)
+
+    loop 每個 InboundOrderItem
+        Handler -> Repo : GetByProductAndWarehouseAsync(productId, warehouseId, ct)
+        Repo -> DB : select from stocks
+
+        alt 找不到對應的 stock row
+            Repo --> Handler : Result.Failure
+            Handler -> Handler : logger.LogError(...)\n（continue，不中斷整批）
+        else 找到
+            Repo --> Handler : Result.Success(stock)
+            Handler -> StockAggregate : Decrease(quantity)
+            StockAggregate -> StockAggregate : Quantity -= quantity
+            Handler -> Repo : SaveAsync(stock, ct)
+            Repo -> DB : update stocks
+        end
+    end
+
+    Handler -> Inbox : MarkProcessedAsync(notification.Id, ct)
+    Handler -> DB : CommitAsync(ct)
+    Publisher --> Consumer : 完成
+end
+
+Consumer -> Kafka : consumer.Commit(result)
+deactivate Consumer
+
+note over StockAggregate
+  Decrease() 可能讓 Quantity 變成負數：
+  如果同一筆 stock 在原始 Increase 跟這次
+  Decrease 之間，被別的 TryReserve 併發扣過，
+  兩邊互相不知道對方，目前刻意不做保護。
+end note
+
+@enduml

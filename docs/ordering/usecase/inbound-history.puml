@@ -1,0 +1,54 @@
+@startuml Inbound History
+
+title 取得入庫歷程（總管理者：全部倉庫可篩選 AdminOnly；倉庫管理者＋一般員工：限自己倉庫 WarehouseStaffOnly）——共用同一個 Query/Handler/Reader
+
+actor "總管理者" as Admin
+actor "倉庫管理者 / 一般員工" as Staff
+
+box "Ordering.Api" #LightBlue
+    participant "ListInboundHistoryEndpoint" as AdminEndpoint
+    participant "ListWarehouseInboundHistoryEndpoint" as StaffEndpoint
+    participant "ICurrentUser" as CurrentUser
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "ListInboundHistoryQueryHandler" as Handler
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IInboundOrderReader" as Reader
+end box
+
+database "ordering_db" as DB
+
+== 總管理者：GET /api/v1/inbound/history?warehouseId=&productNo=&...&page=&size= ==
+Admin -> AdminEndpoint : （warehouseId 可為 null，代表查全部倉庫）
+AdminEndpoint -> Sender : SendAsync(ListInboundHistoryQuery(warehouseId, ...))
+
+== 倉庫管理者／一般員工：GET /api/v1/inbound/history/warehouse?... ==
+Staff -> StaffEndpoint : （不接受 warehouseId 參數）
+StaffEndpoint -> CurrentUser : WarehouseId
+StaffEndpoint -> Sender : SendAsync(ListInboundHistoryQuery(currentUser.WarehouseId, ...))
+
+Sender -> Handler : HandleAsync(query, ct)
+Handler -> Reader : ListHistoryAsync(warehouseId, productNo, productName,\nrequestedBy, confirmedBy, status, requestedFrom, requestedTo, page, size, ct)
+
+Reader -> DB : select 攤開後的每一筆商品品項\n（一張入庫單、多個商品各自一列，共用同一個 order_no）\nfrom inbound_order_items join inbound_orders join products\nwhere status in ('Confirmed','Rejected')  -- 只顯示已處理的\n  and (@WarehouseId is null or warehouse_id = @WarehouseId)\n  and （其餘篩選條件皆為 optional）
+DB --> Reader : 分頁後的 rows，count(*) over() 給總筆數
+
+Reader -> DB : 另外用同一組 where 條件（不分頁）\nselect sum(quantity), sum(unit_price * quantity)
+DB --> Reader : TotalQuantity, TotalAmount\n（畫面最下方顯示，不受分頁影響）
+
+Reader --> Handler : InboundHistoryResultDto {\n  Page: PagedResult<InboundHistoryLineDto>,\n  TotalQuantity, TotalAmount\n}
+Handler --> Sender : Result.Success
+Sender --> Admin : 200 OK
+Sender --> Staff : 200 OK
+
+note over Reader, DB
+  這是目前對「庫存系統需求 v2.2」第7章
+  還原最精確的一支 —— 攤開列表 + 分頁不影響
+  的加總，兩者都照文件字面描述實作。
+end note
+
+@enduml

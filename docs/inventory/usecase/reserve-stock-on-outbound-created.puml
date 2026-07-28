@@ -1,0 +1,94 @@
+@startuml Reserve Stock on OutboundOrderCreated
+
+title 消費 OutboundOrderCreatedIntegrationEvent → TryReserve → 回覆 Reserved/Failed（跨兩個 bounded context 的完整往返）
+
+box "Ordering" #WhiteSmoke
+    participant "OutboxProcessor" as OrderingOutbox
+    participant "IntegrationEventConsumer" as OrderingConsumer
+end box
+
+queue "Kafka\ntopic: ordering.events" as OrderingTopic
+queue "Kafka\ntopic: inventory.events" as InventoryTopic
+
+box "Inventory" #LightYellow
+    participant "IntegrationEventConsumer" as Consumer
+    participant "IPublisher" as Publisher
+    participant "OutboundOrderCreated\nIntegrationEventHandler" as Handler
+    participant "InboxGuard" as Inbox
+    participant "IStockRepository" as Repo
+    participant "Stock" as StockAggregate
+    participant "IIntegrationEventWriter" as Writer
+    participant "OutboxProcessor" as InventoryOutbox
+end box
+
+database "inventory_db" as DB
+
+OrderingOutbox -> OrderingTopic : produce OutboundOrderCreatedIntegrationEvent
+activate Consumer
+OrderingTopic -> Consumer : consumer.Consume()
+
+Consumer -> Inbox : BeginIfNotProcessedAsync(uow, inbox, notification.Id, ct)
+alt 已處理過
+    Inbox --> Consumer : false
+    note right of Consumer : 直接 return，不呼叫 PublishAsync
+else 尚未處理
+    Inbox --> Consumer : true（transaction 保持開啟）
+
+    Consumer -> Publisher : PublishAsync(notification, ct)
+    Publisher -> Handler : HandleAsync(notification, ct)
+
+    loop 每個 OutboundOrderItem
+        Handler -> Repo : GetOrCreateAsync(productId, warehouseId, ct)
+        Repo --> Handler : (Stock, isNew)
+        Handler -> StockAggregate : TryReserve(quantity)
+
+        alt Quantity < quantity（庫存不足）
+            StockAggregate --> Handler : Result.Failure（累積到 insufficientProductIds）
+        else 足夠
+            StockAggregate -> StockAggregate : Quantity -= quantity\nCumulativeShipped += quantity
+            StockAggregate --> Handler : Result.Success
+        end
+    end
+
+    alt insufficientProductIds 非空（整張單一起判斷，不允許部分成功）
+        Handler -> DB : RollbackAsync(ct)（剛才所有 TryReserve 全部作廢）
+        Handler -> DB : BeginAsync(ct)（開新的乾淨 transaction）
+        Handler -> Writer : WriteAsync(OutboundInventoryReservationFailedIntegrationEvent)
+        Writer -> DB : insert into outbox_messages（同一個新 transaction）
+        Handler -> Inbox : MarkProcessedAsync(notification.Id, ct)
+        Handler -> DB : CommitAsync(ct)
+    else 全部成功
+        loop 每個已預留成功的 Stock
+            Handler -> Repo : AddAsync / SaveAsync(stock, ct)
+            Repo -> DB : insert/update stocks
+        end
+        Handler -> Writer : WriteAsync(OutboundInventoryReservedIntegrationEvent)
+        Writer -> DB : insert into outbox_messages（同一個 transaction）
+        Handler -> Inbox : MarkProcessedAsync(notification.Id, ct)
+        Handler -> DB : CommitAsync(ct)
+    end
+    Publisher --> Consumer : 完成
+end
+
+Consumer -> OrderingTopic : consumer.Commit(result)
+deactivate Consumer
+
+... 獨立的背景輪詢（每 5 秒），跟上面的消費流程沒有時間上的耦合 ...
+
+activate InventoryOutbox
+InventoryOutbox -> DB : outboxStore.ListAsync(50, ct)
+DB --> InventoryOutbox : 剛寫入的 Reserved / Failed 訊息
+InventoryOutbox -> InventoryTopic : produce\n(EventType header)
+InventoryOutbox -> DB : message.Process() → SaveAsync(message, ct)
+deactivate InventoryOutbox
+
+InventoryTopic -> OrderingConsumer : consumer.Consume()
+OrderingConsumer -> OrderingConsumer : PublishAsync → \nOutboundOrder.MarkReserved() 或 FailReservation()
+note right of OrderingConsumer
+  Processing → Pending（Reserved）
+  或
+  Processing → Rejected（ReservationFailed）
+  見 docs/ordering/aggregates.puml
+end note
+
+@enduml

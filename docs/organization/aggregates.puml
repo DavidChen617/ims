@@ -1,0 +1,69 @@
+@startuml Organization Aggregates
+
+skinparam class {
+    BackgroundColor<<AggregateRoot>> LightYellow
+    BorderColor<<AggregateRoot>> DarkGoldenRod
+    BackgroundColor<<IntegrationEvent>> WhiteSmoke
+    BorderColor<<IntegrationEvent>> Gray
+}
+
+package "User Aggregate" {
+    class User <<AggregateRoot>> {
+        Id : Guid
+        WarehouseId : Guid?
+        Name : string
+        Username : string
+        PasswordHash : string
+        CreatedAt : DateTime
+        Role : Role
+        --
+        + {static} Register(warehouseId: Guid, name: string, username: string, passwordHash: string, role: Role) : Result<User>
+        + {static} RegisterAdmin(name: string, username: string, passwordHash: string, role: Role) : Result<User>
+    }
+
+    enum Role {
+        Admin
+        WarehouseAdmin
+        WarehouseUser
+    }
+
+    User --> Role
+}
+
+package "Warehouse Aggregate" {
+    class Warehouse <<AggregateRoot>> {
+        Id : Guid
+        Name : string
+        --
+        + {static} Create(name: string) : Result<Warehouse>
+    }
+}
+
+package "RefreshToken Aggregate" {
+    class RefreshToken <<AggregateRoot>> {
+        Id : Guid
+        Token : string
+        ReplacedByToken : string?
+        UserId : Guid
+        CreatedAt : DateTime
+        ExpiresAt : DateTime
+        RevokeAt : DateTime?
+        IsExpired : bool {computed}
+        IsRevoked : bool {computed}
+        --
+        + {static} Create(token: string, userId: Guid, expiresAt: DateTime) : Result<RefreshToken>
+        + Revoke() : Result
+        + ReplaceToken(newToken: string) : Result
+    }
+}
+
+' 同一個 Context 內，跨 Aggregate 都用 Id 參照
+User ..> Warehouse : WarehouseId（reference only，Admin 為 null）
+RefreshToken ..> User : UserId（reference only）
+
+class WarehouseCreatedIntegrationEvent <<IntegrationEvent>> {
+    WarehouseId : Guid
+    Name : string
+}
+
+@enduml

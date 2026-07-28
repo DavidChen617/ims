@@ -1,0 +1,119 @@
+@startuml Inventory Aggregates
+
+skinparam class {
+    BackgroundColor<<AggregateRoot>> LightYellow
+    BorderColor<<AggregateRoot>> DarkGoldenRod
+    BackgroundColor<<ReadModel>> LightBlue
+    BorderColor<<ReadModel>> SteelBlue
+    BackgroundColor<<IntegrationEvent>> WhiteSmoke
+    BorderColor<<IntegrationEvent>> Gray
+}
+
+package "Stock Aggregate" {
+    class Stock <<AggregateRoot>> {
+        ProductId : Guid
+        WarehouseId : Guid
+        Quantity : int
+        CumulativeShipped : int
+        --
+        + {static} Create(productId: Guid, warehouseId: Guid) : Result<Stock>
+        + Increase(quantity: int)
+        + Decrease(quantity: int)
+        + TryReserve(quantity: int) : Result
+        + ReleaseReservation(quantity: int)
+    }
+}
+
+package "Read Model Projections（唯讀，只做顯示用，無業務行為）" {
+    class ProductReference <<ReadModel>> {
+        ProductId : Guid
+        ProductNo : string
+        Name : string
+        UnitName : string
+    }
+
+    class WarehouseReference <<ReadModel>> {
+        WarehouseId : Guid
+        Name : string
+    }
+}
+
+package "訂閱的 Integration Events（來源：Ordering Bounded Context，topic「ordering.events」）" {
+    class InboundOrderCreatedIntegrationEvent <<IntegrationEvent>> {
+        InboundOrderId : Guid
+        WarehouseId : Guid
+        Items : OrderItem[]
+    }
+
+    class InboundOrderRejectedIntegrationEvent <<IntegrationEvent>> {
+        InboundOrderId : Guid
+        WarehouseId : Guid
+        RejectedBy : Guid
+        Reason : string
+        Items : OrderItem[]
+    }
+
+    class OutboundOrderCreatedIntegrationEvent <<IntegrationEvent>> {
+        OutboundOrderId : Guid
+        WarehouseId : Guid
+        Items : OrderItem[]
+    }
+
+    class OutboundOrderRejectedIntegrationEvent <<IntegrationEvent>> {
+        OutboundOrderId : Guid
+        WarehouseId : Guid
+        RejectedBy : Guid
+        Reason : string
+        Items : OrderItem[]
+    }
+
+    class OrderItem <<IntegrationEvent>> {
+        ProductId : Guid
+        Quantity : int
+    }
+}
+
+package "發布的 Integration Events（topic「inventory.events」，供 Ordering 訂閱）" {
+    class OutboundInventoryReservedIntegrationEvent <<IntegrationEvent>> {
+        OutboundOrderId : Guid
+        WarehouseId : Guid
+    }
+
+    class OutboundInventoryReservationFailedIntegrationEvent <<IntegrationEvent>> {
+        OutboundOrderId : Guid
+        WarehouseId : Guid
+        InsufficientProductIds : Guid[]
+    }
+}
+
+InboundOrderCreatedIntegrationEvent ..> Stock : 逐筆 Increase()（樂觀，入庫沒有失敗的前提）
+InboundOrderRejectedIntegrationEvent ..> Stock : 逐筆 Decrease()（撤銷剛才的 Increase）
+OutboundOrderCreatedIntegrationEvent ..> Stock : 逐筆 TryReserve()
+OutboundOrderRejectedIntegrationEvent ..> Stock : 逐筆 ReleaseReservation()（管理員拒絕，釋放預留）
+
+Stock --> OutboundInventoryReservedIntegrationEvent : TryReserve() 全部成功時發出
+Stock --> OutboundInventoryReservationFailedIntegrationEvent : TryReserve() 任一筆不足時發出
+
+Stock ..> ProductReference : ProductId（查詢時 join，非資料庫外鍵）
+Stock ..> WarehouseReference : WarehouseId（查詢時 join，非資料庫外鍵）
+
+note right of Stock
+  Inventory 沒有任何 Command API 給外部呼叫者，
+  唯一的輸入來源是 Kafka 事件（choreography，
+  不是 Ordering 直接呼叫 Inventory 的 API）。
+  消費事件時需做去重（Inbox pattern，比照
+  Ordering 的 IntegrationEventConsumer 用
+  EnableAutoCommit=false + 處理完才手動 commit），
+  避免 Kafka at-least-once 重送造成
+  庫存量被重複增減。
+end note
+
+note bottom of OutboundOrderCreatedIntegrationEvent
+  TryReserve() 是整張單一起判斷：
+  裡面任何一筆 ProductId 庫存不夠，
+  整張單都算失敗，回
+  OutboundInventoryReservationFailedIntegrationEvent，
+  不會部分成功。
+end note
+
+@enduml

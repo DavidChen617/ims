@@ -1,0 +1,45 @@
+@startuml Query Products and Units
+
+title 取得商品清單（分頁）／商品明細／單位清單（GET /api/v1/products...，AnyWarehouseRole：三種身分都能查）
+
+actor "總管理者 / 倉庫管理者 / 一般員工" as Caller
+
+box "Ordering.Api" #LightBlue
+    participant "ListProductsEndpoint" as Endpoint
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "TransactionalDecorator" as Decorator
+    participant "ListProductsQueryHandler" as Handler
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IProductReader" as Reader
+end box
+
+database "ordering_db" as DB
+
+Caller -> Endpoint : GET /api/v1/products?page=&size=
+Endpoint -> Endpoint : RequireAuthorization("AnyWarehouseRole")
+Endpoint -> Sender : SendAsync(ListProductsQuery(page, size))
+Sender -> Decorator : HandleAsync(request, next, ct)
+Decorator -> Decorator : BeginAsync(ct)（純查詢也會經過同一個裝飾器，但沒有東西要 dequeue）
+Decorator -> Handler : next()
+Handler -> Reader : ListAsync(page, size, ct)
+Reader -> DB : select ..., count(*) over() as total_count\nfrom products join product_units ...\noffset ... limit ...
+DB --> Reader : rows + total_count
+Reader --> Handler : PagedResult<ProductDto>（含解析後的 Unit 名稱）
+Handler --> Decorator : Result.Success
+Decorator -> Decorator : CommitAsync(ct)
+Decorator --> Sender : result
+Sender --> Endpoint : result
+Endpoint --> Caller : 200 OK { items, totalCount, page, size }
+
+note over Handler, Reader
+  GetProduct（單筆明細）、ListProductUnits（單位清單）
+  結構相同，差別只在 Reader 查的資料形狀，
+  這裡不重複畫。
+end note
+
+@enduml

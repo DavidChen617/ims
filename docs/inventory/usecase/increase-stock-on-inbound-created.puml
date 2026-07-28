@@ -1,0 +1,70 @@
+@startuml Increase Stock on InboundOrderCreated
+
+title 消費 InboundOrderCreatedIntegrationEvent → 增加庫存（樂觀，入庫沒有失敗的前提）
+
+box "Ordering" #WhiteSmoke
+    participant "OutboxProcessor" as OrderingOutbox
+end box
+
+queue "Kafka\ntopic: ordering.events" as Kafka
+
+box "Inventory" #LightYellow
+    participant "IntegrationEventConsumer" as Consumer
+    participant "IPublisher" as Publisher
+    participant "InboundOrderCreated\nIntegrationEventHandler" as Handler
+    participant "InboxGuard" as Inbox
+    participant "IStockRepository" as Repo
+    participant "Stock" as StockAggregate
+end box
+
+database "inventory_db" as DB
+
+OrderingOutbox -> Kafka : produce\n(EventType header = InboundOrderCreatedIntegrationEvent)
+activate Consumer
+Kafka -> Consumer : consumer.Consume()
+Consumer -> Consumer : 讀 "EventType" header\n查 subscriptionOptions.EventTypes
+Consumer -> Consumer : JsonSerializer.Deserialize(value, eventType)
+
+Consumer -> Inbox : BeginIfNotProcessedAsync(uow, inbox, notification.Id, ct)
+Inbox -> DB : begin transaction
+Inbox -> DB : select from inbox_messages where event_id = @Id
+alt 已處理過（Kafka 重送）
+    Inbox --> Consumer : false
+    note right of Consumer : 直接 return，不呼叫 PublishAsync，\n所有 4 個消費事件的 handler 都不用\n再各自檢查一次。
+else 尚未處理
+    Inbox --> Consumer : true（transaction 保持開啟）
+
+    Consumer -> Publisher : PublishAsync(notification, ct)
+    Publisher -> Handler : HandleAsync(notification, ct)
+
+    loop 每個 InboundOrderItem
+        Handler -> Repo : GetOrCreateAsync(productId, warehouseId, ct)
+        Repo -> DB : select ... （若無則視為 new）
+        Repo --> Handler : (Stock, isNew)
+        Handler -> StockAggregate : Increase(quantity)
+        StockAggregate -> StockAggregate : Quantity += quantity
+        Handler -> Repo : AddAsync / SaveAsync(stock, ct)
+        Repo -> DB : insert/update stocks
+    end
+
+    Handler -> Inbox : MarkProcessedAsync(notification.Id, ct)
+    Inbox -> DB : insert into inbox_messages
+    Handler -> DB : CommitAsync(ct)
+    Publisher --> Consumer : 完成
+end
+
+Consumer -> Kafka : consumer.Commit(result)（手動 commit offset）
+deactivate Consumer
+
+note over Handler
+  沒有補償/失敗路徑：入庫在 Ordering 端
+  已經是「一定成功」的前提，這裡永遠是
+  Increase()，不會拒絕。MarkProcessedAsync/
+  CommitAsync 仍然留在 handler 裡 —— 交易的
+  開頭（去重檢查）統一在 Consumer，但收尾
+  還是各 handler 自己負責（部分 handler，如
+  reserve-stock-on-outbound-created，中途會
+  Rollback 再開一個全新的 transaction）。
+end note
+
+@enduml

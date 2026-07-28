@@ -1,0 +1,78 @@
+@startuml Review Inbound Order (Confirm / Reject)
+
+title 確認 / 拒絕入庫單（POST /api/v1/inbound/{id}/confirm 或 /reject，WarehouseAdminOnly）
+
+actor "倉庫管理者\n(WarehouseAdmin)" as Admin
+
+box "Ordering.Api" #LightBlue
+    participant "Confirm/RejectInboundEndpoint" as Endpoint
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "TransactionalDecorator" as Decorator
+    participant "Confirm/RejectInboundCommandHandler" as Handler
+    participant "InboundOrderRejected\nDomainEventHandler" as DomainHandler
+end box
+
+box "Ordering.Domain" #Lavender
+    participant "InboundOrder" as Order
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IInboundOrderRepository" as Repo
+    participant "IOrderingUnitOfWork" as UoW
+    participant "IIntegrationEventWriter" as Writer
+end box
+
+database "ordering_db" as DB
+
+Admin -> Endpoint : POST /api/v1/inbound/{id}/confirm 或 /reject { reason? }
+Endpoint -> Sender : SendAsync(Confirm/RejectInboundCommand)
+Sender -> Decorator : HandleAsync(request, next, ct)
+Decorator -> UoW : BeginAsync(ct)
+Decorator -> Handler : next()
+Handler -> Repo : GetByIdAsync(id, ct)
+Repo -> DB : select from inbound_orders where id = @id
+Repo --> Handler : InboundOrder（必須是 Pending，否則後面 domain 方法會擋）
+
+alt 確認（Confirm）
+    Handler -> Order : Confirm(confirmedBy)
+    Order -> Order : Status = Confirmed
+    note right of Order : 沒有 RaiseDomainEvent ——\n單純本地狀態轉換，\n不需要通知 Inventory
+    Order --> Handler : Result.Success
+else 拒絕（Reject）
+    Handler -> Order : Reject(confirmedBy, reason)
+    Order -> Order : Status = Rejected
+    Order -> Order : RaiseDomainEvent(InboundOrderRejectedDomainEvent)
+    Order --> Handler : Result.Success
+end
+
+Handler -> Repo : SaveAsync(order, ct)（同時 tracker.Enqueue(order)）
+Repo -> DB : update inbound_orders
+
+Decorator -> UoW : CommitAsync(ct)
+UoW -> UoW : dequeue → 收集 DomainEvents
+
+alt 剛才是 Reject（有 1 個 domain event）
+    UoW -> DomainHandler : PublishAsync(InboundOrderRejectedDomainEvent) → HandleAsync
+    DomainHandler -> Writer : WriteAsync(InboundOrderRejectedIntegrationEvent, ct)
+    Writer -> DB : insert into outbox_messages（同一個 transaction）
+else 剛才是 Confirm（沒有 domain event）
+    UoW -> UoW : （沒有事要做）
+end
+
+UoW -> DB : commit
+Decorator --> Sender : result
+Sender --> Endpoint : result
+Endpoint --> Admin : 200 OK { id, status }
+
+note over Writer
+  InboundOrderRejectedIntegrationEvent 之後由
+  OutboxProcessor 送到 Kafka，Inventory 消費後
+  執行 Decrease()（見
+  docs/inventory/usecase/decrease-stock-on-inbound-rejected.puml），
+  把剛剛入庫時樂觀加上去的庫存扣回去。
+end note
+
+@enduml

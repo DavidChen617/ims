@@ -1,0 +1,42 @@
+@startuml List Stocks (Admin)
+
+title 總管理者取得庫存清單（GET /api/v1/stocks，AdminOnly）
+
+actor "總管理者\n(Admin)" as Admin
+
+box "Inventory.Api" #LightBlue
+    participant "ListStocksEndpoint" as Endpoint
+end box
+
+box "Inventory.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "ListStocksQueryHandler" as Handler
+end box
+
+box "Inventory.Infrastructure" #WhiteSmoke
+    participant "IStockReader" as Reader
+end box
+
+database "inventory_db" as DB
+
+Admin -> Endpoint : GET /api/v1/stocks?warehouseId=&productId=&page=&size=
+Endpoint -> Endpoint : RequireAuthorization("AdminOnly")
+Endpoint -> Sender : SendAsync(ListStocksQuery(warehouseId, productId, page, size))
+Sender -> Handler : HandleAsync(query, ct)
+Handler -> Reader : ListAsync(warehouseId, productId, page, size, ct)
+Reader -> DB : select ..., count(*) over() as total_count\nfrom stocks\nwhere (@WarehouseId is null or warehouse_id = @WarehouseId)\n  and (@ProductId is null or product_id = @ProductId)\norder by ...\noffset ... limit ...
+DB --> Reader : rows + total_count（同一次查詢拿到分頁資料跟總數）
+Reader --> Handler : PagedResult<StockDto>
+Handler --> Sender : Result.Success(PagedResult<StockDto>)
+Sender --> Endpoint : result
+Endpoint --> Admin : 200 OK { items: [...], totalCount, page, size }
+
+note over Reader, DB
+  StockDto 目前只有 ProductId/WarehouseId（純 ID）。
+  文件（庫存系統需求 v2.2 第6章）要求輸出
+  商品名稱、商品編號、倉庫名稱（文字），
+  這裡故意先不做——需要跨 Ordering/Organization
+  查詢名稱，目前是已知、刻意延後的落差。
+end note
+
+@enduml

@@ -1,0 +1,80 @@
+@startuml Consume Inventory Reply (Reserved / Failed)
+
+title Ordering 消費 Inventory 對出庫預留的回覆 → Processing 轉 Pending 或 Rejected
+
+box "Inventory" #LightYellow
+    participant "OutboxProcessor" as InventoryOutbox
+end box
+
+queue "Kafka\ntopic: inventory.events" as Kafka
+queue "Kafka\ntopic: inventory.events.dlq" as DLQ
+
+box "Ordering" #WhiteSmoke
+    participant "IntegrationEventConsumer" as Consumer
+    participant "IPublisher" as Publisher
+    participant "OutboundInventoryReserved/\nFailedIntegrationEventHandler" as Handler
+    participant "IOutboundOrderRepository" as Repo
+    participant "OutboundOrder" as Order
+end box
+
+database "ordering_db" as DB
+
+InventoryOutbox -> Kafka : produce OutboundInventoryReservedIntegrationEvent\n或 OutboundInventoryReservationFailedIntegrationEvent
+activate Consumer
+Kafka -> Consumer : consumer.Consume()
+Consumer -> Consumer : 讀 "EventType" header\n查 subscriptionOptions.EventTypes
+
+alt EventType 沒對到已註冊的事件，或 payload 反序列化失敗
+    Consumer -> DLQ : PublishToDeadLetterAsync\n(Key/Value 原樣 + Error/FailedAt header)
+else 正常
+    Consumer -> Publisher : PublishAsync(notification, ct)
+    Publisher -> Handler : HandleAsync(notification, ct)
+
+    Handler -> Repo : GetByIdAsync(notification.OutboundOrderId, ct)
+
+    alt 找不到這張單
+        Repo --> Handler : Result.Failure
+        Handler -> Handler : logger.LogError(...)（不拋例外，靜默結束）
+    else 找到
+        Repo --> Handler : OutboundOrder
+
+        alt 收到 Reserved
+            Handler -> Order : MarkReserved()
+            alt Status != Processing（重複消費或狀態已經前進過）
+                Order --> Handler : Result.Failure
+                Handler -> Handler : logger.LogWarning(...)（不拋例外）
+            else
+                Order -> Order : Status = Pending
+                Order --> Handler : Result.Success
+                Handler -> Repo : SaveAsync(order, ct)
+                Repo -> DB : update outbound_orders
+            end
+        else 收到 Failed
+            Handler -> Order : FailReservation("庫存不足，系統自動拒絕")
+            alt Status != Processing
+                Order --> Handler : Result.Failure
+                Handler -> Handler : logger.LogWarning(...)
+            else
+                Order -> Order : Status = Rejected\nRejectReason = "庫存不足，系統自動拒絕"
+                Order --> Handler : Result.Success
+                Handler -> Repo : SaveAsync(order, ct)
+                Repo -> DB : update outbound_orders
+            end
+        end
+    end
+end
+
+Publisher --> Consumer : 完成
+Consumer -> Kafka : consumer.Commit(result)（手動 commit offset）
+deactivate Consumer
+
+note over Handler
+  這兩個 handler 沒有 InboxGuard——跟 Inventory
+  端的消費者不同。原因是 MarkReserved()/
+  FailReservation() 本身有「Status != Processing
+  就失敗」的 guard clause，天然就是 idempotent，
+  Kafka at-least-once 重送不會造成重複扣減這類問題，
+  不需要額外的去重表。
+end note
+
+@enduml

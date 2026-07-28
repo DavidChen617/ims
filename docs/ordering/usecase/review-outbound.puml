@@ -1,0 +1,79 @@
+@startuml Review Outbound Order (Confirm / Reject)
+
+title 確認 / 拒絕出庫單（POST /api/v1/outbound/{id}/confirm 或 /reject，WarehouseAdminOnly，前提：Status 必須已經是 Pending）
+
+actor "倉庫管理者\n(WarehouseAdmin)" as Admin
+
+box "Ordering.Api" #LightBlue
+    participant "Confirm/RejectOutboundEndpoint" as Endpoint
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "TransactionalDecorator" as Decorator
+    participant "Confirm/RejectOutboundCommandHandler" as Handler
+    participant "OutboundOrderRejected\nDomainEventHandler" as DomainHandler
+end box
+
+box "Ordering.Domain" #Lavender
+    participant "OutboundOrder" as Order
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IOutboundOrderRepository" as Repo
+    participant "IOrderingUnitOfWork" as UoW
+    participant "IIntegrationEventWriter" as Writer
+end box
+
+database "ordering_db" as DB
+
+Admin -> Endpoint : POST /api/v1/outbound/{id}/confirm 或 /reject { reason? }
+Endpoint -> Sender : SendAsync(Confirm/RejectOutboundCommand)
+Sender -> Decorator : HandleAsync(request, next, ct)
+Decorator -> UoW : BeginAsync(ct)
+Decorator -> Handler : next()
+Handler -> Repo : GetByIdAsync(id, ct)
+Repo --> Handler : OutboundOrder
+
+alt Status != Pending（還在 Processing，Inventory 還沒回覆）
+    Handler --> Decorator : Error（"Only pending orders can be confirmed/rejected"）
+    note right of Handler
+      這正是為什麼出庫要先經過 Processing：
+      管理員在 Inventory 回覆之前完全看不到、
+      也審核不到這張單（見 create-outbound.puml）。
+    end note
+else Status == Pending
+    alt 確認（Confirm）
+        Handler -> Order : Confirm(confirmedBy)
+        Order -> Order : Status = Confirmed
+        note right of Order : 沒有 RaiseDomainEvent
+    else 拒絕（Reject，此時庫存已經被 Inventory 預留住）
+        Handler -> Order : Reject(confirmedBy, reason)
+        Order -> Order : Status = Rejected
+        Order -> Order : RaiseDomainEvent(OutboundOrderRejectedDomainEvent)
+    end
+    Handler -> Repo : SaveAsync(order, ct)
+    Repo -> DB : update outbound_orders
+    Handler --> Decorator : Result.Success
+end
+
+Decorator -> UoW : CommitAsync(ct)
+alt 剛才是 Reject
+    UoW -> DomainHandler : PublishAsync(OutboundOrderRejectedDomainEvent) → HandleAsync
+    DomainHandler -> Writer : WriteAsync(OutboundOrderRejectedIntegrationEvent, ct)
+    Writer -> DB : insert into outbox_messages
+end
+UoW -> DB : commit
+Decorator --> Sender : result
+Sender --> Endpoint : result
+Endpoint --> Admin : 200 OK { id, status }
+
+note over Writer
+  OutboundOrderRejectedIntegrationEvent 之後由
+  OutboxProcessor 送到 Kafka，Inventory 消費後
+  執行 ReleaseReservation()（見
+  docs/inventory/usecase/release-stock-on-outbound-rejected.puml），
+  把剛剛預留住的庫存還回去。
+end note
+
+@enduml

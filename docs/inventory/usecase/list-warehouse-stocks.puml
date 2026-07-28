@@ -1,0 +1,44 @@
+@startuml List Warehouse Stocks (WarehouseAdmin / WarehouseUser)
+
+title 倉庫管理者／一般員工取得自己倉庫的庫存清單（GET /api/v1/stocks/warehouse，WarehouseStaffOnly）
+
+actor "倉庫管理者 / 一般員工\n(WarehouseAdmin / WarehouseUser)" as Staff
+
+box "Inventory.Api" #LightBlue
+    participant "ListWarehouseStocksEndpoint" as Endpoint
+    participant "ICurrentUser" as CurrentUser
+end box
+
+box "Inventory.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "ListStocksQueryHandler" as Handler
+end box
+
+box "Inventory.Infrastructure" #WhiteSmoke
+    participant "IStockReader" as Reader
+end box
+
+database "inventory_db" as DB
+
+Staff -> Endpoint : GET /api/v1/stocks/warehouse?productId=&page=&size=\n(Authorization: Bearer <jwt>)
+Endpoint -> Endpoint : RequireAuthorization("WarehouseStaffOnly")
+Endpoint -> CurrentUser : WarehouseId
+CurrentUser --> Endpoint : 從 JWT 的 "warehouseId" claim 取得\n（不接受前端傳入，避免跨倉庫查詢）
+Endpoint -> Sender : SendAsync(ListStocksQuery(currentUser.WarehouseId, productId, page, size))
+Sender -> Handler : HandleAsync(query, ct)
+Handler -> Reader : ListAsync(warehouseId, productId, page, size, ct)
+Reader -> DB : select ..., count(*) over() as total_count\nfrom stocks\nwhere warehouse_id = @WarehouseId\n  and (@ProductId is null or product_id = @ProductId)\noffset ... limit ...
+DB --> Reader : rows + total_count
+Reader --> Handler : PagedResult<StockDto>
+Handler --> Sender : Result.Success(PagedResult<StockDto>)
+Sender --> Endpoint : result
+Endpoint --> Staff : 200 OK { items: [...], totalCount, page, size }
+
+note over Handler, Reader
+  跟 ListStocksEndpoint（Admin 版）共用同一個
+  ListStocksQuery/Handler/Reader，差別只在
+  WarehouseId 從哪裡來：Admin 版可傳 null（查全部），
+  這裡永遠是 currentUser.WarehouseId（強制限縮）。
+end note
+
+@enduml
