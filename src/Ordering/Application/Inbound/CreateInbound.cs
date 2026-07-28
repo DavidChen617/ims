@@ -2,6 +2,7 @@ using Davish.Result;
 using Domain.InboundOrders;
 using Domain.Products;
 
+using Application.Abstracts;
 namespace Application.Inbound;
 
 public sealed record CreateInboundCommand(

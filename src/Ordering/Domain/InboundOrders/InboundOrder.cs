@@ -59,6 +59,8 @@ public sealed class InboundOrder : AggregateRoot
         ConfirmedByName = confirmedByName;
         ConfirmedAt = DateTime.UtcNow;
 
+        RaiseDomainEvent(new InboundOrderConfirmedDomainEvent(Id, WarehouseId, confirmedBy));
+
         return Result.Success();
     }
 

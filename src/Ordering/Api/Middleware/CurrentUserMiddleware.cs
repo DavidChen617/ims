@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Api.Identity;
 using Application;
 
+using Application.Abstracts;
 namespace Api.Middleware;
 
 public sealed class CurrentUserMiddleware(RequestDelegate next)

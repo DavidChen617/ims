@@ -101,9 +101,6 @@ public sealed class IntegrationEventConsumer(
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             var inbox = scope.ServiceProvider.GetRequiredService<IInboxStore>();
 
-            // 這裡統一幫每一種消費的事件類型做一次去重 —— handler 不用再自己呼叫這個了。
-            // 但 MarkProcessedAsync/CommitAsync(還有庫存不足那條「Rollback 後在全新
-            // transaction 重試」的分支)還是各 handler 自己負責,因為那部分真的是 handler 各自特有的邏輯。
             if (!await InboxGuard.BeginIfNotProcessedAsync(unitOfWork, inbox, notification.Id, ct))
                 return;
 

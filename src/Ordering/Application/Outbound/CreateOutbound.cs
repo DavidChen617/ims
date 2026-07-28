@@ -2,6 +2,7 @@ using Davish.Result;
 using Domain.OutboundOrders;
 using Domain.Products;
 
+using Application.Abstracts;
 namespace Application.Outbound;
 
 public sealed record CreateOutboundCommand(

@@ -1,3 +1,4 @@
+using Application.Abstracts;
 using Davish.Result;
 using Domain.OutboundOrders;
 
@@ -12,8 +13,19 @@ public sealed record ListOutboundHistoryQuery(
     string? ProductName,
     string? Unit,
     Guid? RequestedBy,
-    Guid? ConfirmedBy
-) : IQuery<Result<OutboundHistoryResultDto>>;
+    Guid? ConfirmedBy,
+    int Page,
+    int Size
+) : IQuery<Result<PagedResult<OutboundHistoryDto>>>, ICacheableQuery
+{
+    public string CacheKey =>
+        $"outbound-history:{HistoryCacheKey.WarehouseSegment(WarehouseId)}:{Status}:{CompletedFrom:O}:{CompletedTo:O}:" +
+        $"{ProductNo}:{ProductName}:{Unit}:{RequestedBy}:{ConfirmedBy}:{Page}:{Size}";
+
+    // 歷程只會有已終結狀態(Confirmed/Rejected)的訂單,不會被回頭修改,只會有新的單子
+    // 加進來——事件觸發的失效搭配這個短 TTL 當保險,不用擔心兩者互相矛盾。
+    public TimeSpan CacheTtl => TimeSpan.FromSeconds(60);
+}
 
 public sealed record OutboundHistoryDto(
     Guid Id,
@@ -27,13 +39,11 @@ public sealed record OutboundHistoryDto(
     Guid? ConfirmedBy,
     string? ConfirmedByName);
 
-public sealed record OutboundHistoryResultDto(IReadOnlyList<OutboundHistoryDto> Items);
-
 public sealed class ListOutboundHistoryQueryHandler(
     IOutboundOrderReader reader
-) : IQueryHandler<ListOutboundHistoryQuery, Result<OutboundHistoryResultDto>>
+) : IQueryHandler<ListOutboundHistoryQuery, Result<PagedResult<OutboundHistoryDto>>>
 {
-    public async Task<Result<OutboundHistoryResultDto>> HandleAsync(
+    public async Task<Result<PagedResult<OutboundHistoryDto>>> HandleAsync(
         ListOutboundHistoryQuery request, CancellationToken cancellationToken)
     {
         return await reader.ListHistoryAsync(
@@ -46,7 +56,8 @@ public sealed class ListOutboundHistoryQueryHandler(
             request.Unit,
             request.RequestedBy,
             request.ConfirmedBy,
-            cancellationToken)
-            .Then(items => new OutboundHistoryResultDto(items));
+            request.Page,
+            request.Size,
+            cancellationToken);
     }
 }

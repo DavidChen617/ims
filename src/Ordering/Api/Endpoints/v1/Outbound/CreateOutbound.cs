@@ -12,7 +12,7 @@ public static class CreateOutboundEndpoint
         {
             outboundV1Group.MapPost("", Handle)
                 .Produces<CreateOutboundDto>()
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
                 .WithName("CreateOutbound")
                 .WithSummary("Create an outbound order")
                 .WithDescription("Create a new outbound order for a warehouse with a list of product items.")

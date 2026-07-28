@@ -4,6 +4,7 @@ using MessageContract;
 using MessageContract.OutboundOrders;
 using SharedKernel;
 
+using Application.Abstracts;
 namespace Application.Outbound.EventHandling;
 
 public sealed class OutboundOrderCreatedDomainEventHandler(

@@ -1,6 +1,7 @@
 using Davish.Result;
 using Domain.OutboundOrders;
 
+using Application.Abstracts;
 namespace Application.Outbound;
 
 public sealed record ConfirmOutboundCommand(

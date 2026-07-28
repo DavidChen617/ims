@@ -1,6 +1,6 @@
 using MessageContract;
 
-namespace Application;
+namespace Application.Abstracts;
 
 public interface IIntegrationEventWriter
 {

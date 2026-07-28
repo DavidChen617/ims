@@ -20,7 +20,8 @@ builder.Services
 builder.Services
     .AddHealthChecks()
     .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "postgresql")
-    .AddKafka(new ProducerConfig { BootstrapServers = builder.Configuration["Kafka:BootstrapServers"] }, name: "kafka");
+    .AddKafka(new ProducerConfig { BootstrapServers = builder.Configuration["Kafka:BootstrapServers"] }, name: "kafka")
+    .AddRedis(builder.Configuration["Redis:ConnectionString"]!, name: "redis");
 
 builder.Services
     .AddJwtAuthentication(builder.Configuration)
@@ -30,8 +31,6 @@ builder.Services
     .AddProblemDetailsWithCustomizeDetail()
     .AddValidation();
 
-// 依序輪詢:先給 NpgsqlExceptionHandler 機會接住漏檢查就直接打到 DB 的例外,
-// 其他所有沒被特化處理的例外最後都掉到 GlobalExceptionHandler。
 builder.Services
     .AddExceptionHandler<NpgsqlExceptionHandler>()
     .AddExceptionHandler<GlobalExceptionHandler>();

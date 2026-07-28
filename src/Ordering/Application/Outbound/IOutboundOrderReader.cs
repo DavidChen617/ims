@@ -9,7 +9,7 @@ public interface IOutboundOrderReader
     Task<Result<OutboundOrderDto>> GetByIdAsync(Guid id, Guid warehouseId, CancellationToken ct);
     Task<Result<IReadOnlyList<PendingOutboundOrderDto>>> ListPendingAsync(Guid warehouseId, CancellationToken ct);
 
-    Task<Result<IReadOnlyList<OutboundHistoryDto>>> ListHistoryAsync(
+    Task<Result<PagedResult<OutboundHistoryDto>>> ListHistoryAsync(
         Guid? warehouseId,
         OutboundOrderStatus? status,
         DateTime? completedFrom,
@@ -19,6 +19,8 @@ public interface IOutboundOrderReader
         string? unit,
         Guid? requestedBy,
         Guid? confirmedBy,
+        int page,
+        int size,
         CancellationToken ct);
 
     Task<Result<IReadOnlyList<PendingOutboundQuantityDto>>> ListPendingQuantitiesAsync(

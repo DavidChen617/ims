@@ -3,6 +3,7 @@ using Application;
 using Application.Outbound;
 using Davish.Sendr;
 
+using Application.Abstracts;
 namespace Api.Endpoints.v1.Outbound;
 
 public static class ListWarehousePendingOutboundQuantitiesEndpoint

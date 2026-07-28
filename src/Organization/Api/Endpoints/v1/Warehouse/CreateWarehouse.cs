@@ -13,7 +13,7 @@ public static class CreateWarehouseEndpoint
         {
             warehouseV1Group.MapPost("", Handle)
                 .Produces<WarehouseDto>()
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
                 .WithName("CreateWarehouse")
                 .WithSummary("Create a new warehouse")
                 .WithDescription("Create a new warehouse with a unique name. Returns 400 if the name already exists.")

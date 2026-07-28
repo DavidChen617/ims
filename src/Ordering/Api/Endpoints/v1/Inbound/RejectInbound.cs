@@ -12,8 +12,8 @@ public static class RejectInboundEndpoint
         {
             inboundV1Group.MapPost("{id:guid}/reject", Handle)
                 .Produces<RejectInboundDto>()
-                .Produces(StatusCodes.Status404NotFound)
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
                 .WithName("RejectInbound")
                 .WithSummary("Reject an inbound order")
                 .WithDescription("Reject a pending inbound order with a reason.")

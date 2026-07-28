@@ -1,5 +1,6 @@
 using Davish.Result;
 
+using Application.Abstracts;
 namespace Application.Outbound;
 
 public sealed record ListPendingOutboundOrdersQuery : IQuery<Result<PendingOutboundOrdersDto>>;

@@ -1,4 +1,4 @@
-namespace Application;
+namespace Application.Abstracts;
 
 public interface ICurrentUser
 {
@@ -7,4 +7,5 @@ public interface ICurrentUser
     string Name { get; }
     string Username { get; }
     Guid? WarehouseId { get; }
+    string? WarehouseName { get; }
 }

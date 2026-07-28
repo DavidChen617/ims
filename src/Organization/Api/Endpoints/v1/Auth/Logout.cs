@@ -12,7 +12,7 @@ public static class LogoutEndpoint
         {
             authV1Group.MapPost("logout", Handle)
                 .Produces(StatusCodes.Status204NoContent)
-                .Produces(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
                 .WithName("Logout")
                 .WithSummary("User logout")
                 .WithDescription(

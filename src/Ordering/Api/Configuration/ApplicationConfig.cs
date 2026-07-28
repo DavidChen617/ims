@@ -7,6 +7,7 @@ using Application.Products;
 using Davish.Result;
 using CurrentUser = Api.Identity.CurrentUser;
 
+using Application.Abstracts;
 namespace Api.Configuration;
 
 public static class ApplicationConfig
@@ -28,9 +29,9 @@ public static class ApplicationConfig
                 .AddRequestHandler<ListPendingInboundOrdersQuery, Result<PendingInboundOrdersDto>,
                     ListPendingInboundOrdersQueryHandler>()
                 .AddRequestHandler<ListInboundHistoryQuery, Result<InboundHistoryResultDto>,
-                    ListInboundHistoryQueryHandler>()
+                    ListInboundHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())
                 .AddRequestHandler<ListInboundOrderHistoryQuery, Result<InboundOrderHistoryResultDto>,
-                    ListInboundOrderHistoryQueryHandler>()
+                    ListInboundOrderHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())
                 .AddRequestHandler<ConfirmInboundCommand, Result<ConfirmInboundDto>, ConfirmInboundCommandHandler>(x =>
                     x.Decorator.With<TransactionalDecorator>())
                 .AddRequestHandler<RejectInboundCommand, Result<RejectInboundDto>, RejectInboundCommandHandler>(x =>
@@ -42,8 +43,8 @@ public static class ApplicationConfig
                     GetOutboundOrderForAdminQueryHandler>()
                 .AddRequestHandler<ListPendingOutboundOrdersQuery, Result<PendingOutboundOrdersDto>,
                     ListPendingOutboundOrdersQueryHandler>()
-                .AddRequestHandler<ListOutboundHistoryQuery, Result<OutboundHistoryResultDto>,
-                    ListOutboundHistoryQueryHandler>()
+                .AddRequestHandler<ListOutboundHistoryQuery, Result<PagedResult<OutboundHistoryDto>>,
+                    ListOutboundHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())
                 .AddRequestHandler<ListPendingOutboundQuantitiesQuery, Result<PendingOutboundQuantitiesDto>,
                     ListPendingOutboundQuantitiesQueryHandler>()
                 .AddRequestHandler<ConfirmOutboundCommand, Result<ConfirmOutboundDto>,

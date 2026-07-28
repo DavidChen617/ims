@@ -1,5 +1,6 @@
 using Application;
 
+using Application.Abstracts;
 namespace Api.Identity;
 
 public enum Role

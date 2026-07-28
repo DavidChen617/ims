@@ -12,8 +12,8 @@ public static class ConfirmOutboundEndpoint
         {
             outboundV1Group.MapPost("{id:guid}/confirm", Handle)
                 .Produces<ConfirmOutboundDto>()
-                .Produces(StatusCodes.Status404NotFound)
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
                 .WithName("ConfirmOutbound")
                 .WithSummary("Confirm an outbound order")
                 .WithDescription("Confirm a pending outbound order.")

@@ -1,3 +1,4 @@
+using Application;
 using Application.Outbound;
 using Dapper;
 using Davish.Result;
@@ -91,7 +92,7 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
         return Result.Success<IReadOnlyList<PendingOutboundOrderDto>>(orders.ToList());
     }
 
-    public async Task<Result<IReadOnlyList<OutboundHistoryDto>>> ListHistoryAsync(
+    public async Task<Result<PagedResult<OutboundHistoryDto>>> ListHistoryAsync(
         Guid? warehouseId,
         OutboundOrderStatus? status,
         DateTime? completedFrom,
@@ -101,12 +102,15 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
         string? unit,
         Guid? requestedBy,
         Guid? confirmedBy,
+        int page,
+        int size,
         CancellationToken ct)
     {
         var cmd = new CommandDefinition(
             """
             select o.id, o.order_no, o.warehouse_id, o.status, o.requested_at, o.confirmed_at,
-                   o.requested_by, o.requested_by_name, o.confirmed_by, o.confirmed_by_name
+                   o.requested_by, o.requested_by_name, o.confirmed_by, o.confirmed_by_name,
+                   count(*) over()::int as total_count
             from outbound_orders o
             where o.status in (@Confirmed, @Rejected)
               and (@Status::smallint is null or o.status = @Status::smallint)
@@ -128,6 +132,7 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
                 )
               )
             order by o.confirmed_at desc
+            limit @Size offset @Offset
             """,
             new
             {
@@ -141,19 +146,23 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
                 ConfirmedBy = confirmedBy,
                 ProductNo = productNo,
                 ProductName = productName,
-                Unit = unit
+                Unit = unit,
+                Size = size,
+                Offset = (page - 1) * size
             },
             cancellationToken: ct,
             transaction: unitOfWork.Transaction
         );
 
-        var rows = await unitOfWork.Connection.QueryAsync<HistoryRow>(cmd);
+        var rows = (await unitOfWork.Connection.QueryAsync<HistoryRow>(cmd)).ToList();
 
         var history = rows.Select(r => new OutboundHistoryDto(
             r.Id, r.OrderNo, r.WarehouseId, ((OutboundOrderStatus)r.Status).ToString(), r.RequestedAt, r.ConfirmedAt,
             r.RequestedBy, r.RequestedByName, r.ConfirmedBy, r.ConfirmedByName));
 
-        return Result.Success<IReadOnlyList<OutboundHistoryDto>>(history.ToList());
+        var totalCount = rows.Count > 0 ? rows[0].TotalCount : 0;
+
+        return new PagedResult<OutboundHistoryDto>(history.ToList(), totalCount, page, size);
     }
 
     public async Task<Result<IReadOnlyList<PendingOutboundQuantityDto>>> ListPendingQuantitiesAsync(
@@ -190,7 +199,8 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
         Guid RequestedBy,
         string RequestedByName,
         Guid? ConfirmedBy,
-        string? ConfirmedByName);
+        string? ConfirmedByName,
+        int TotalCount);
 
     // Status 故意存 short(對應 DB 的 smallint),不是 OutboundOrderStatus enum ——
     // record 沒有無參數建構子,Dapper 不管是單一型別還是 multi-map 查詢,都只能走

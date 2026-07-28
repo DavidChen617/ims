@@ -1,4 +1,4 @@
-using Application;
+using Application.Abstracts;
 using Application.Inbound;
 using Application.Inbound.EventHandling;
 using Application.Outbound;
@@ -11,6 +11,7 @@ using Domain.InboundOrders.Events;
 using Domain.OutboundOrders;
 using Domain.OutboundOrders.Events;
 using Domain.Products;
+using Infrastructure.Caching;
 using Infrastructure.Messaging;
 using Infrastructure.Outbox;
 using Infrastructure.Persistence;
@@ -21,6 +22,7 @@ using MessageContract.OutboundOrders;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel;
+using StackExchange.Redis;
 
 namespace Infrastructure;
 
@@ -45,6 +47,9 @@ public static class Dependency
                 .AddScoped<IOutboundOrderReader, OutboundOrderReader>()
                 .AddScoped<IOutboxStore, OutboxStore>()
                 .AddScoped<IIntegrationEventWriter, IntegrationEventWriter>()
+                .AddScoped<ICacher, RedisCache>()
+                .AddSingleton<IConnectionMultiplexer>(
+                    _ => ConnectionMultiplexer.Connect(configuration["Redis:ConnectionString"]!))
                 .Configure<KafkaTopicOptions>(o => configuration.GetSection("Kafka:Topics").Bind(o))
                 .AddSingleton<IProducer<string, string>>(_ =>
                 {
@@ -69,10 +74,14 @@ public static class Dependency
                 .AddSendrNotification()
                 .AddNotificationHandler<InboundOrderCreatedDomainEvent>(
                     x => x.Handler.Sequence.With<InboundOrderCreatedDomainEventHandler>())
+                .AddNotificationHandler<InboundOrderConfirmedDomainEvent>(
+                    x => x.Handler.Sequence.With<InboundOrderConfirmedDomainEventHandler>())
                 .AddNotificationHandler<InboundOrderRejectedDomainEvent>(
                     x => x.Handler.Sequence.With<InboundOrderRejectedDomainEventHandler>())
                 .AddNotificationHandler<OutboundOrderCreatedDomainEvent>(
                     x => x.Handler.Sequence.With<OutboundOrderCreatedDomainEventHandler>())
+                .AddNotificationHandler<OutboundOrderConfirmedDomainEvent>(
+                    x => x.Handler.Sequence.With<OutboundOrderConfirmedDomainEventHandler>())
                 .AddNotificationHandler<OutboundOrderRejectedDomainEvent>(
                     x => x.Handler.Sequence.With<OutboundOrderRejectedDomainEventHandler>())
                 .AddIntegrationEventSubscription<OutboundInventoryReservedIntegrationEvent,

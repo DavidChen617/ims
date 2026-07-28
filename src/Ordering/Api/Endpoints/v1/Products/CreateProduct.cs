@@ -12,8 +12,8 @@ public static class CreateProductEndpoint
         {
             productsV1Group.MapPost("", Handle)
                 .Produces<CreateProductDto>()
-                .Produces(StatusCodes.Status400BadRequest)
-                .Produces(StatusCodes.Status409Conflict)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status409Conflict)
                 .WithName("CreateProduct")
                 .WithSummary("Create a product")
                 .WithDescription("Create a new product with a unique product number and an existing unit.")

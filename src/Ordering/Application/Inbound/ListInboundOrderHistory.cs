@@ -1,3 +1,4 @@
+using Application.Abstracts;
 using Davish.Result;
 using Domain.InboundOrders;
 
@@ -19,7 +20,14 @@ public sealed record ListInboundOrderHistoryQuery(
     DateTime? CompletedTo,
     decimal? AmountMin,
     decimal? AmountMax
-) : IQuery<Result<InboundOrderHistoryResultDto>>;
+) : IQuery<Result<InboundOrderHistoryResultDto>>, ICacheableQuery
+{
+    public string CacheKey =>
+        $"inbound-order-history:{WarehouseId}:{Status}:{ProductNo}:{ProductName}:{RequestedBy}:{ConfirmedBy}:" +
+        $"{RequestedFrom:O}:{RequestedTo:O}:{CompletedFrom:O}:{CompletedTo:O}:{AmountMin}:{AmountMax}";
+
+    public TimeSpan CacheTtl => TimeSpan.FromSeconds(60);
+}
 
 public sealed record InboundOrderHistoryDto(
     Guid Id,

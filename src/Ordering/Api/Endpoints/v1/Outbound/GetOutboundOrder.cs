@@ -12,7 +12,7 @@ public static class GetOutboundOrderEndpoint
         {
             outboundV1Group.MapGet("{id:guid}", Handle)
                 .Produces<OutboundOrderDto>()
-                .Produces(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status404NotFound)
                 .WithName("GetOutboundOrder")
                 .WithSummary("Get an outbound order")
                 .WithDescription("Get an outbound order by id, scoped to the caller's own warehouse.")

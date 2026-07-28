@@ -1,5 +1,9 @@
 using System.Text;
+using Application;
+using Application.Abstracts;
+using Application.Outbound;
 using Dapper;
+using Davish.Sendr;
 using Domain.OutboundOrders;
 using Domain.Products;
 using Infrastructure.Persistence;
@@ -105,6 +109,90 @@ public class OutboundOrderMessagingTests(KafkaCustomWebApplicationFactory factor
         Assert.True(deadLettered.Message.Headers.TryGetLastBytes("FailedAt", out _));
     }
 
+    // 驗證 CachingDecorator 真的會發生「cache hit」時不會爆炸 —— Result<TValue> 的建構子
+    // 是 internal,一開始的實作直接快取整個 Result<TValue>,cache hit 反序列化時
+    // 一定會丟 NotSupportedException。連續呼叫兩次同一個查詢、中間不做任何會讓快取
+    // 失效的操作,第二次一定會是 cache hit,藉此逼出這條路徑。
+    [Fact]
+    public async Task GivenSameHistoryQueryTwice_WhenSecondCallHitsCache_ThenDeserializesWithoutThrowing()
+    {
+        var (unitName, product) = await CreateProductAsync();
+        var order = OutboundOrder
+            .Create($"OUT-{Guid.CreateVersion7()}", Guid.CreateVersion7(), Guid.CreateVersion7(), "Requester", [(product.Id, 1)])
+            .Value;
+
+        order.MarkReserved();
+        order.Confirm(Guid.CreateVersion7(), "Confirmer");
+        await AddOrderAsync(order);
+
+        try
+        {
+            var first = await QueryAllWarehousesHistoryAsync();
+            var second = await QueryAllWarehousesHistoryAsync();
+
+            Assert.Contains(first.Items, dto => dto.Id == order.Id);
+            Assert.Contains(second.Items, dto => dto.Id == order.Id);
+            Assert.Equal(first.TotalCount, second.TotalCount);
+        }
+        finally
+        {
+            await CleanUpAsync(order.Id, product.Id, unitName);
+        }
+    }
+
+    // 驗證「全倉庫」(WarehouseId = null,Admin 沒篩選查詢)的歷程快取,在任何一個倉庫的
+    // 出貨單被確認時也會一併失效 —— 不是只有那個倉庫自己的 key 才會被清掉。
+    // 這個測試如果拿掉 OutboundOrderConfirmedDomainEventHandler 裡對
+    // HistoryCacheKey.AllWarehouses 的那次 DeleteByPrefixAsync,應該會失敗
+    // (第二次查詢會回傳跟第一次一樣的舊快取,看不到剛剛才 Confirm 的訂單)。
+    [Fact]
+    public async Task GivenConfirmedOrder_WhenAllWarehousesHistoryWasCached_ThenCacheIsInvalidated()
+    {
+        var (unitName, product) = await CreateProductAsync();
+        var order = OutboundOrder
+            .Create($"OUT-{Guid.CreateVersion7()}", Guid.CreateVersion7(), Guid.CreateVersion7(), "Requester", [(product.Id, 1)])
+            .Value;
+
+        order.MarkReserved();
+        await AddOrderAsync(order);
+
+        try
+        {
+            var beforeConfirm = await QueryAllWarehousesHistoryAsync();
+            Assert.DoesNotContain(beforeConfirm.Items, dto => dto.Id == order.Id);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+                var confirmResult = await sender.SendAsync(new ConfirmOutboundCommand(order.Id), CancellationToken.None);
+
+                Assert.True(confirmResult.IsSuccess);
+            }
+
+            var afterConfirm = await QueryAllWarehousesHistoryAsync();
+
+            Assert.Contains(afterConfirm.Items, dto => dto.Id == order.Id);
+        }
+        finally
+        {
+            await CleanUpAsync(order.Id, product.Id, unitName);
+        }
+    }
+
+    private async Task<PagedResult<OutboundHistoryDto>> QueryAllWarehousesHistoryAsync()
+    {
+        using var scope = factory.Services.CreateScope();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+
+        var result = await sender.SendAsync(
+            new ListOutboundHistoryQuery(null, null, null, null, null, null, null, null, null, 1, 50),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+
+        return result.Value;
+    }
+
     private async Task<(string UnitName, Product Product)> CreateProductAsync()
     {
         using var scope = factory.Services.CreateScope();
@@ -153,11 +241,16 @@ public class OutboundOrderMessagingTests(KafkaCustomWebApplicationFactory factor
     {
         using var scope = factory.Services.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IOrderingUnitOfWork>();
+        var cacher = scope.ServiceProvider.GetRequiredService<ICacher>();
 
         await unitOfWork.Connection.ExecuteAsync(
             "delete from outbound_order_items where outbound_order_id = @orderId", new { orderId });
         await unitOfWork.Connection.ExecuteAsync("delete from outbound_orders where id = @orderId", new { orderId });
         await unitOfWork.Connection.ExecuteAsync("delete from products where id = @productId", new { productId });
         await unitOfWork.Connection.ExecuteAsync("delete from product_units where name = @unitName", new { unitName });
+
+        // 「全倉庫」歷程快取是所有測試共用的同一個 key,不清掉的話,這個測試留下的
+        // cache hit 會讓下一個測試撈到已經被刪掉的訂單 id。
+        await cacher.DeleteByPrefixAsync($"outbound-history:{HistoryCacheKey.AllWarehouses}", CancellationToken.None);
     }
 }

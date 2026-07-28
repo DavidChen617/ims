@@ -3,6 +3,7 @@ using Application;
 using Application.Stocks;
 using Davish.Result;
 
+using Application.Abstracts;
 namespace Api.Configuration;
 
 public static class ApplicationConfig

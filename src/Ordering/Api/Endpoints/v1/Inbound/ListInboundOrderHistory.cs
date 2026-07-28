@@ -4,6 +4,7 @@ using Application.Inbound;
 using Davish.Sendr;
 using Domain.InboundOrders;
 
+using Application.Abstracts;
 namespace Api.Endpoints.v1.Inbound;
 
 public static class ListInboundOrderHistoryEndpoint

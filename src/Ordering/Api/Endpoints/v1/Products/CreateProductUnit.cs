@@ -11,8 +11,8 @@ public static class CreateProductUnitEndpoint
         public RouteGroupBuilder MapCreateProductUnitEndpoint()
         {
             productsV1Group.MapPost("units", Handle)
-                .Produces(StatusCodes.Status400BadRequest)
-                .Produces(StatusCodes.Status409Conflict)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status409Conflict)
                 .WithName("CreateProductUnit")
                 .WithSummary("Create a product unit")
                 .WithDescription("Create a new product unit with a unique name.")

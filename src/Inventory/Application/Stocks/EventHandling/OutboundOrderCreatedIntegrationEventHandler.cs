@@ -3,6 +3,7 @@ using MessageContract.OutboundOrders;
 using Microsoft.Extensions.Logging;
 using SharedKernel;
 
+using Application.Abstracts;
 namespace Application.Stocks.EventHandling;
 
 public sealed class OutboundOrderCreatedIntegrationEventHandler(

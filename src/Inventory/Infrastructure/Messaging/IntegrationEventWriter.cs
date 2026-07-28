@@ -3,6 +3,7 @@ using Application;
 using Infrastructure.Outbox;
 using MessageContract;
 
+using Application.Abstracts;
 namespace Infrastructure.Messaging;
 
 public sealed class IntegrationEventWriter(IOutboxStore store) : IIntegrationEventWriter

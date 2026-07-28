@@ -12,7 +12,7 @@ public static class GetProductEndpoint
         {
             productsV1Group.MapGet("{id:guid}", Handle)
                 .Produces<ProductDto>()
-                .Produces(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status404NotFound)
                 .WithName("GetProduct")
                 .WithSummary("Get a product")
                 .WithDescription("Get a product by id.")

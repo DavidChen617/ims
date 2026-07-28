@@ -19,7 +19,7 @@ public static class RegisterUserEndpoint
         {
             authV1Group.MapPost("admin/register/user", Handle)
                 .Produces<RegisterUserDto>()
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesValidationProblem()
                 .WithName("RegisterUserByAdmin")
                 .WithSummary("Register a new user")
                 .WithDescription(

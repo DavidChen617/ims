@@ -3,6 +3,7 @@ using Application;
 using Application.Stocks;
 using Davish.Sendr;
 
+using Application.Abstracts;
 namespace Api.Endpoints.v1.Stocks;
 
 public static class ListWarehouseStocksEndpoint

@@ -13,7 +13,7 @@ public static class GetWarehouseEndpoint
         {
             warehouseV1Group.MapGet("{id:guid}", Handle)
                 .Produces<WarehouseDetailDto>()
-                .Produces(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status404NotFound)
                 .WithName("GetWarehouse")
                 .WithSummary("Get a warehouse's detail")
                 .WithDescription("Get a warehouse by id, including its warehouse admins and regular users.")

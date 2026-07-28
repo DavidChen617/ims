@@ -16,7 +16,7 @@ public static class RefreshTokenEndpoint
         {
             authV1Group.MapPost("refresh/token", Handle)
                 .Produces<RefreshTokenDto>()
-                .Produces(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
                 .WithName("RefreshToken")
                 .WithSummary("refresh token")
                 .WithDescription(

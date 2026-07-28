@@ -12,7 +12,7 @@ public static class GetInboundOrderForAdminEndpoint
         {
             inboundV1Group.MapGet("admin/{id:guid}", Handle)
                 .Produces<InboundOrderDto>()
-                .Produces(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status404NotFound)
                 .WithName("GetInboundOrderForAdmin")
                 .WithSummary("Get an inbound order (admin)")
                 .WithDescription("Get an inbound order by id, across any warehouse.")

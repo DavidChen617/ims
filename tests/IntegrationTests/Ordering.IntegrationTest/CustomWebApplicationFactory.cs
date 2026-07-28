@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
 
 namespace Ordering.IntegrationTest;
 
@@ -19,20 +20,23 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         .WithPassword("password")
         .Build();
 
+    private readonly RedisContainer _redisContainer = new RedisBuilder("redis:8").Build();
+
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        await Task.WhenAll(_container.StartAsync(), _redisContainer.StartAsync());
 
         // Program.cs 會很早就讀取 ConnectionStrings:DefaultConnection,早於這個 factory 的
         // ConfigureWebHost hook 生效的時機 —— 在 host 建置前先設好環境變數,才能真的來得及生效。
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _container.GetConnectionString());
+        Environment.SetEnvironmentVariable("Redis__ConnectionString", _redisContainer.GetConnectionString());
 
         await MigrationRunner.ApplyAsync(_container.GetConnectionString());
     }
 
     async Task IAsyncLifetime.DisposeAsync()
     {
-        await _container.DisposeAsync();
+        await Task.WhenAll(_container.DisposeAsync().AsTask(), _redisContainer.DisposeAsync().AsTask());
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

@@ -19,7 +19,7 @@ public static class egisterWarehouseUserEndpoint
         {
             authV1Group.MapPost("warehouseAdmin/register/warehouseUser", Handle)
                 .Produces<RegisterWarehouseUserDto>()
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesValidationProblem()
                 .WithName("RegisterWarehouseUserByWarehouseAdmin")
                 .WithSummary("Register a new user")
                 .WithDescription(

@@ -4,6 +4,7 @@ using Application.Outbound;
 using Davish.Sendr;
 using Domain.OutboundOrders;
 
+using Application.Abstracts;
 namespace Api.Endpoints.v1.Outbound;
 
 public static class ListWarehouseOutboundHistoryEndpoint
@@ -13,7 +14,7 @@ public static class ListWarehouseOutboundHistoryEndpoint
         public RouteGroupBuilder MapListWarehouseOutboundHistoryEndpoint()
         {
             outboundV1Group.MapGet("history/warehouse", Handle)
-                .Produces<OutboundHistoryResultDto>()
+                .Produces<PagedResult<OutboundHistoryDto>>()
                 .WithName("ListWarehouseOutboundHistory")
                 .WithSummary("List outbound history for the current warehouse")
                 .WithDescription("List completed (confirmed/rejected) outbound orders for the caller's warehouse.")
@@ -34,12 +35,14 @@ public static class ListWarehouseOutboundHistoryEndpoint
         string? productName = null,
         string? unit = null,
         Guid? requestedBy = null,
-        Guid? confirmedBy = null)
+        Guid? confirmedBy = null,
+        int page = 1,
+        int size = 20)
     {
         var result = await sender.SendAsync(
             new ListOutboundHistoryQuery(
                 currentUser.WarehouseId, status, completedFrom, completedTo, productNo, productName, unit, requestedBy,
-                confirmedBy),
+                confirmedBy, page, size),
             ct);
 
         return result.ToOk();

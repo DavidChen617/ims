@@ -32,8 +32,6 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     {
         await _container.StartAsync();
 
-        // Program.cs 會很早就讀取 ConnectionStrings:DefaultConnection,早於這個 factory 的
-        // ConfigureWebHost hook 生效的時機 —— 在 host 建置前先設好環境變數,才能真的來得及生效。
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _container.GetConnectionString());
 
         await MigrationRunner.ApplyAsync(_container.GetConnectionString());
@@ -50,9 +48,6 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
         builder.ConfigureServices((context, services) =>
         {
-            // OutboxProcessor / IntegrationEventConsumer 需要真正的 Kafka broker,跟這些
-            // endpoint 測試要驗證的東西無關 —— 拿掉它們,host 才不會在測試跑的時候
-            // 在背景嘗試連 Kafka(然後失敗)。
             services.RemoveAll<IHostedService>();
 
             var keyBase64 = context.Configuration["Authentication:Schemes:Bearer:SigningKeys:0:Value"]
@@ -64,8 +59,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             {
                 options.Authority = null;
                 options.RequireHttpsMetadata = false;
-                // MapInboundClaims 預設是 true,跟正式環境一致 —— 它會把 "sub" 重新映射成
-                // ClaimTypes.NameIdentifier,而這正是 CurrentUserMiddleware 讀取的 claim。
+                
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,

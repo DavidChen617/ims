@@ -12,7 +12,7 @@ public static class GetOutboundOrderForAdminEndpoint
         {
             outboundV1Group.MapGet("admin/{id:guid}", Handle)
                 .Produces<OutboundOrderDto>()
-                .Produces(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status404NotFound)
                 .WithName("GetOutboundOrderForAdmin")
                 .WithSummary("Get an outbound order (admin)")
                 .WithDescription("Get an outbound order by id, across any warehouse.")

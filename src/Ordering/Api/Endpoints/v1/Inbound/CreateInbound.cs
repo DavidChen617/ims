@@ -12,7 +12,7 @@ public static class CreateInboundEndpoint
         {
             inboundV1Group.MapPost("", Handle)
                 .Produces<CreateInboundDto>()
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
                 .WithName("CreateInbound")
                 .WithSummary("Create an inbound order")
                 .WithDescription("Create a new inbound order for a warehouse with a list of product items.")

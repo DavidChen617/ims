@@ -4,10 +4,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Ordering.ApiTest;
 
-// 完全對齊 Organization TokenGenerator 的 claim 形狀:ClaimTypes.NameIdentifier、
-// ClaimTypes.Name、ClaimTypes.Role 全部直接寫成長格式 URI,所以這裡不依賴 JWT handler
-// 的 inbound claim map。只有 "name" 維持用簡短的 JWT-registered claim 名稱
-// (它也不在那個 map 裡,所以兩種寫法都不會有歧義)。
 public static class TestJwt
 {
     public static string Create(

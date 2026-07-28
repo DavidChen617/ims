@@ -17,8 +17,8 @@ public static class LoginEndpoint
         {
             authV1Group.MapPost("login", Handle)
                 .Produces<LoginDto>()
-                .Produces(StatusCodes.Status401Unauthorized)
-                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
                 .WithName("Login")
                 .WithSummary("User login")
                 .WithDescription("Verify the account password and return AccessToken and RefreshToken after success.");

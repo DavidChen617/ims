@@ -1,5 +1,6 @@
 using Davish.Result;
 
+using Application.Abstracts;
 namespace Application.Outbound;
 
 public sealed record GetOutboundOrderQuery(Guid Id) : IQuery<Result<OutboundOrderDto>>;

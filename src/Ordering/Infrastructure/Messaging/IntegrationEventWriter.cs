@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Application;
+using Application.Abstracts;
 using Infrastructure.Outbox;
 using MessageContract;
 

@@ -11,8 +11,8 @@ public static class DeleteProductUnitEndpoint
         public RouteGroupBuilder MapDeleteProductUnitEndpoint()
         {
             productsV1Group.MapDelete("units/{name}", Handle)
-                .Produces(StatusCodes.Status404NotFound)
-                .Produces(StatusCodes.Status409Conflict)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status409Conflict)
                 .WithName("DeleteProductUnit")
                 .WithSummary("Delete a product unit")
                 .WithDescription("Delete a product unit. Returns 409 if the unit is still used by a product.")

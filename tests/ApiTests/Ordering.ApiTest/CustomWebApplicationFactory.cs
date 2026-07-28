@@ -6,17 +6,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
 
 namespace Ordering.ApiTest;
 
-// Ordering 驗證 JWT 的方式是透過 OIDC discovery 對 `JwtSetting:Authority` 打過去,而這些
-// Organization 發的 token —— 但測試時 Organization 根本沒有跑起來,discovery 一定會失敗。
-// 這裡不另外幫 Organization 起一個 WebApplicationFactory,而是直接重用
-// `dotnet user-jwts` 已經存在 Ordering.Api 的 user-secrets 裡的簽章金鑰(見 TestJwt),
-// 把 bearer handler 換成直接用這把金鑰驗證,完全繞過 Authority。
-//
-// 每次測試都起一個全新、用完就丟的 Postgres 容器,不依賴開發機(或 CI)上
-// 事先手動建好、migrate 過的 ordering_db_test。
 public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string Issuer = "dotnet-user-jwts";
@@ -30,20 +23,23 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         .WithPassword("password")
         .Build();
 
+    private readonly RedisContainer _redisContainer = new RedisBuilder("redis:8").Build();
+
     public string ConnectionString => _container.GetConnectionString();
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        await Task.WhenAll(_container.StartAsync(), _redisContainer.StartAsync());
 
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _container.GetConnectionString());
+        Environment.SetEnvironmentVariable("Redis__ConnectionString", _redisContainer.GetConnectionString());
 
         await MigrationRunner.ApplyAsync(_container.GetConnectionString());
     }
 
     async Task IAsyncLifetime.DisposeAsync()
     {
-        await _container.DisposeAsync();
+        await Task.WhenAll(_container.DisposeAsync().AsTask(), _redisContainer.DisposeAsync().AsTask());
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -66,9 +62,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             {
                 options.Authority = null;
                 options.RequireHttpsMetadata = false;
-                // MapInboundClaims 預設是 true —— 保持不變,跟正式環境一致。它會把 "sub"
-                // claim 重新映射成 ClaimTypes.NameIdentifier,這正是 CurrentUserMiddleware
-                // 現在讀取的 claim(見 CurrentUserMiddleware.cs 的修正)。
+                
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,

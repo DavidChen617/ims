@@ -9,6 +9,7 @@
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="Dapper" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Npgsql.DependencyInjection" />
     <PackageReference Include="Polly" />
