@@ -1,0 +1,67 @@
+@startuml Query Inbound Orders (Pending List / Detail)
+
+title 取得尚未處理的入庫清單／入庫單明細（一般員工＋倉庫管理者用 WarehouseStaffOnly 版；總管理者另有跨倉庫版本）
+
+actor "一般員工 / 倉庫管理者" as Staff
+actor "總管理者" as Admin
+
+box "Ordering.Api" #LightBlue
+    participant "ListPendingInboundOrdersEndpoint" as PendingEndpoint
+    participant "GetInboundOrderEndpoint" as DetailEndpoint
+    participant "GetInboundOrderForAdminEndpoint" as AdminDetailEndpoint
+    participant "ICurrentUser" as CurrentUser
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "ListPendingInboundOrders\nQueryHandler" as PendingHandler
+    participant "GetInboundOrderQueryHandler" as DetailHandler
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IInboundOrderReader" as Reader
+end box
+
+database "ordering_db" as DB
+
+== 待處理清單（限自己倉庫）==
+Staff -> PendingEndpoint : GET /api/v1/inbound/pending
+PendingEndpoint -> Sender : SendAsync(ListPendingInboundOrdersQuery())
+Sender -> PendingHandler : HandleAsync(query, ct)
+PendingHandler -> CurrentUser : WarehouseId（從 JWT claim 取得，query 本身不帶參數）
+PendingHandler -> Reader : ListPendingAsync(currentUser.WarehouseId, ct)
+Reader -> DB : select from inbound_orders\nwhere warehouse_id = @WarehouseId and status = 'Pending'
+DB --> Reader : rows
+Reader --> PendingHandler : IReadOnlyList<PendingInboundOrderDto>
+PendingHandler --> Sender : result
+Sender --> PendingEndpoint : result
+PendingEndpoint --> Staff : 200 OK
+
+== 明細（限自己倉庫）==
+Staff -> DetailEndpoint : GET /api/v1/inbound/{id}
+DetailEndpoint -> Sender : SendAsync(GetInboundOrderQuery(id))
+Sender -> DetailHandler : HandleAsync(query, ct)
+DetailHandler -> CurrentUser : WarehouseId
+DetailHandler -> Reader : GetByIdAsync(id, currentUser.WarehouseId, ct)
+Reader -> DB : select ... where id = @Id\nand (@WarehouseId is null or warehouse_id = @WarehouseId)
+alt 這張單不屬於自己倉庫，或不存在
+    DB --> Reader : 0 rows
+    Reader --> DetailHandler : Result.Failure
+    DetailHandler --> Staff : 404 Not Found
+else 找到
+    DB --> Reader : row + items（join products 解析商品名稱/單位）
+    Reader --> DetailHandler : InboundOrderDto
+    DetailHandler --> Staff : 200 OK
+end
+
+== 明細（跨倉庫，總管理者）==
+Admin -> AdminDetailEndpoint : GET /api/v1/inbound/admin/{id}
+AdminDetailEndpoint -> Sender : SendAsync(GetInboundOrderQuery(id, warehouseId: null))
+note right of AdminDetailEndpoint
+  同一個 GetByIdAsync，但 warehouseId 傳 null
+  → SQL 的 "@WarehouseId is null or ..." 這個條件
+  永遠成立，不受限縮，可查任何倉庫的單。
+end note
+Sender --> Admin : 200 OK
+
+@enduml

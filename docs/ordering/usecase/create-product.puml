@@ -1,0 +1,68 @@
+@startuml Create Product (and Units)
+
+title 新增商品 / 新增單位 / 刪除單位（POST /api/v1/products、/units；DELETE /units/{name}，AdminOrWarehouseAdmin）
+
+actor "總管理者 / 倉庫管理者\n(Admin / WarehouseAdmin)" as Caller
+
+box "Ordering.Api" #LightBlue
+    participant "CreateProductEndpoint" as Endpoint
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "TransactionalDecorator" as Decorator
+    participant "CreateProductCommandHandler" as Handler
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IOrderingUnitOfWork" as UoW
+    participant "IProductRepository" as Repo
+end box
+
+database "ordering_db" as DB
+
+Caller -> Endpoint : POST /api/v1/products { productNo, name, unit, price }
+Endpoint -> Endpoint : RequireAuthorization("AdminOrWarehouseAdmin")
+Endpoint -> Sender : SendAsync(CreateProductCommand)
+Sender -> Decorator : HandleAsync(request, next, ct)
+Decorator -> UoW : BeginAsync(ct)
+Decorator -> Handler : next() → HandleAsync(command, ct)
+
+Handler -> Repo : GetByNoAsync(productNo, ct)
+alt 商品編號已存在
+    Repo --> Handler : Result.Success
+    Handler --> Decorator : Error 409 Conflict
+else 不存在
+    Handler -> Repo : GetUnitByNameAsync(unit, ct)
+    alt 單位不存在
+        Repo --> Handler : Result.Failure
+        Handler --> Decorator : Error
+    else 單位存在
+        Repo --> Handler : ProductUnit
+        Handler -> Handler : Product.Create(productNo, name, unit, price)
+        Handler -> Repo : AddAsync(product, ct)
+        Repo -> DB : insert into products
+        Handler --> Decorator : Result.Success(CreateProductDto)
+    end
+end
+
+Decorator -> UoW : CommitAsync(ct)
+note right of UoW
+  Product 沒有 domain event（不像 InboundOrder/
+  OutboundOrder），CommitAsync 這裡單純只是
+  Transaction.CommitAsync()，沒有東西要 dequeue/publish。
+end note
+UoW -> DB : commit
+Decorator --> Sender : result
+Sender --> Endpoint : result
+Endpoint --> Caller : 201 Created (Location: /api/v1/products/{id})
+
+note over Handler
+  新增單位（CreateProductUnit）、刪除單位
+  （DeleteProductUnit，多一個「檢查是否被
+  商品引用」的查詢）結構完全一樣：
+  Endpoint → Sender → TransactionalDecorator
+  → Handler → Repository → DB，這裡不重複畫。
+end note
+
+@enduml

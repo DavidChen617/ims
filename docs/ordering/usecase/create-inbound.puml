@@ -1,0 +1,85 @@
+@startuml Create Inbound Order
+
+title 申請入庫（POST /api/v1/inbound，WarehouseUserOnly）—— TransactionalDecorator 如何把「寫入單據」跟「寫入 outbox」包進同一個交易
+
+actor "一般員工\n(WarehouseUser)" as User
+
+box "Ordering.Api" #LightBlue
+    participant "CreateInboundEndpoint" as Endpoint
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "TransactionalDecorator" as Decorator
+    participant "CreateInboundCommandHandler" as Handler
+    participant "InboundOrderCreated\nDomainEventHandler" as DomainHandler
+end box
+
+box "Ordering.Domain" #Lavender
+    participant "InboundOrder" as Order
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IProductRepository" as ProductRepo
+    participant "IInboundOrderRepository" as OrderRepo
+    participant "IAggregateRootChangeTracker" as Tracker
+    participant "IOrderingUnitOfWork" as UoW
+    participant "IIntegrationEventWriter" as Writer
+    participant "IPublisher" as Publisher
+end box
+
+database "ordering_db" as DB
+
+User -> Endpoint : POST /api/v1/inbound { orderNo, items[] }
+Endpoint -> Endpoint : RequireAuthorization("WarehouseUserOnly")
+Endpoint -> Sender : SendAsync(CreateInboundCommand)
+Sender -> Decorator : HandleAsync(request, next, ct)
+Decorator -> UoW : BeginAsync(ct)
+UoW -> DB : begin transaction
+
+Decorator -> Handler : next() → HandleAsync(command, ct)
+Handler -> ProductRepo : GetExistingIdsAsync(requestedProductIds, ct)
+ProductRepo -> DB : select id from products where id in (...)
+
+alt 有商品編號不存在
+    Handler --> Decorator : Error 404 NotFound
+else 全部存在
+    Handler -> Order : InboundOrder.Create(orderNo, currentUser.WarehouseId,\ncurrentUser.UserId, items)
+    Order -> Order : status = Pending（入庫沒有「數量夠不夠」這種會失敗的前提）
+    Order -> Order : RaiseDomainEvent(InboundOrderCreatedDomainEvent)
+    Order --> Handler : Result.Success(order)
+
+    Handler -> OrderRepo : AddAsync(order, ct)
+    OrderRepo -> DB : insert into inbound_orders, inbound_order_items
+    OrderRepo -> Tracker : Enqueue(order)
+    Handler --> Decorator : Result.Success(CreateInboundDto)
+end
+
+Decorator -> UoW : CommitAsync(ct)
+UoW -> Tracker : Dequeue()
+Tracker --> UoW : [order]（含它的 DomainEvents）
+UoW -> UoW : events = orders.SelectMany(x => x.DomainEvents)
+
+loop 每個 domain event（這裡只有 1 個：InboundOrderCreatedDomainEvent）
+    UoW -> Publisher : PublishAsync(event, ct)（transaction 還沒 commit，還在同一個交易裡）
+    Publisher -> DomainHandler : HandleAsync(event, ct)
+    DomainHandler -> Writer : WriteAsync(InboundOrderCreatedIntegrationEvent, ct)
+    Writer -> DB : insert into outbox_messages（同一個 transaction）
+end
+
+UoW -> DB : Transaction.CommitAsync()（單據 + outbox 一起 commit，原子性）
+Decorator --> Sender : result
+Sender --> Endpoint : result
+Endpoint --> User : 201 Created (Location: /api/v1/inbound/{id})
+
+note over UoW
+  這就是 outbox pattern 的關鍵：domain event
+  發布、寫入 outbox_messages，全部發生在
+  Transaction.CommitAsync() 真正 commit 之前，
+  所以「單據建立成功」跟「outbox 訊息已排入」
+  是同一個原子操作，不會半成功。
+  之後由 OutboxProcessor（背景輪詢）
+  另外把 outbox_messages 送到 Kafka。
+end note
+
+@enduml

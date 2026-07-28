@@ -1,0 +1,127 @@
+@startuml Resolve Product/Warehouse Names via Event Enrichment (eShop-style)
+
+title 方案 C：來源端把名稱寫進事件（denormalize at write time）—— 以出庫預留為例，入庫同理
+
+== 前提：倉庫名稱要能免查詢地拿到，JWT 得多帶一個 claim ==
+
+box "Organization" #Pink
+    participant "TokenGenerator" as TokenGen
+end box
+
+TokenGen -> TokenGen : 登入時，除了現有的 "warehouseId" claim，\n新增 "warehouseName" claim\n（Warehouse 資料本來就在 Organization，這裡不需要跨服務）
+
+== 寫入側：Ordering 建立出庫單時，把名稱一起塞進 domain event / integration event ==
+
+actor "一般員工\n(WarehouseUser)" as User
+
+box "Ordering.Api" #LightBlue
+    participant "CreateOutboundEndpoint" as Endpoint
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "TransactionalDecorator" as Decorator
+    participant "CreateOutboundCommandHandler" as Handler
+    participant "ICurrentUser" as CurrentUser
+    participant "OutboundOrderCreated\nDomainEventHandler" as DomainHandler
+end box
+
+box "Ordering.Domain" #Lavender
+    participant "OutboundOrder" as Order
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "新增：IProductRepository\n.GetByIdsAsync(ids)" as ProductRepo
+    participant "IOutboundOrderRepository" as OrderRepo
+    participant "IIntegrationEventWriter" as Writer
+end box
+
+database "ordering_db" as DB
+queue "Kafka\ntopic: ordering.events" as Kafka
+
+User -> Endpoint : POST /api/v1/outbound { orderNo, items[] }
+Endpoint -> Decorator : SendAsync(CreateOutboundCommand)
+Decorator -> Handler : next()
+
+Handler -> ProductRepo : GetByIdsAsync(requestedProductIds, ct)
+note right of ProductRepo
+  跟現在的 GetExistingIdsAsync 差別：
+  現在只拿回一串 Guid 做存在性檢查；
+  這裡改成拿回完整的 Product（含 ProductNo/
+  Name/Unit.Name），一次查詢，不多打一次 API。
+end note
+ProductRepo -> DB : select ... where id in (...)
+ProductRepo --> Handler : [Product]（含名稱、單位）
+
+alt 有商品編號不存在
+    Handler --> Decorator : Error 404 NotFound
+else 全部存在
+    Handler -> CurrentUser : WarehouseId, WarehouseName（都從 JWT claim 取得）
+    Handler -> Order : OutboundOrder.Create(orderNo, warehouseId, warehouseName,\nrequestedBy, items 含 ProductNo/Name/Unit)
+    Order -> Order : Status = Processing
+    Order -> Order : RaiseDomainEvent(OutboundOrderCreatedDomainEvent\n（Items 現在每筆都帶 ProductNo/ProductName/Unit，\n  另外帶一個 WarehouseName))
+    Order --> Handler : Result.Success(order)
+    Handler -> OrderRepo : AddAsync(order, ct)
+    OrderRepo -> DB : insert into outbound_orders, outbound_order_items
+end
+
+Decorator -> DomainHandler : CommitAsync(ct) → dequeue → PublishAsync(domain event)
+DomainHandler -> DomainHandler : 把 domain event 的 Items 逐筆對應成\nOutboundOrderCreatedIntegrationEvent 的 OrderItem\n（OrderItem 新增 ProductNo/ProductName/Unit 欄位）
+DomainHandler -> Writer : WriteAsync(OutboundOrderCreatedIntegrationEvent\n(..., WarehouseName, Items: [OrderItem(ProductId, ProductNo,\nProductName, Unit, Quantity)]))
+Writer -> DB : insert into outbox_messages（同一個 transaction）
+DB -> Kafka : （之後由 OutboxProcessor 背景輪詢送出，機制不變）
+
+== 消費側：Inventory 收到事件時，名稱直接落地到 stocks 表 ==
+
+box "Inventory" #LightYellow
+    participant "OutboundOrderCreated\nIntegrationEventHandler" as InvHandler
+    participant "IStockRepository" as StockRepo
+    participant "Stock" as StockAggregate
+end box
+
+database "inventory_db\n（stocks 表新增：product_no, product_name,\nunit, warehouse_name 欄位）" as InvDB
+
+Kafka -> InvHandler : PublishAsync（去重邏輯跟現在一樣，這裡不重複畫）
+loop 每個 OrderItem
+    InvHandler -> StockRepo : GetOrCreateAsync(item.ProductId, event.WarehouseId, ct)
+    StockRepo --> InvHandler : (Stock, isNew)
+    InvHandler -> StockAggregate : TryReserve(item.Quantity)
+    InvHandler -> StockAggregate : SetDisplayInfo(item.ProductNo, item.ProductName,\nitem.Unit, event.WarehouseName)
+    note right of StockAggregate
+      新方法，純粹更新顯示用欄位，不影響
+      Quantity/CumulativeShipped 的業務邏輯。
+      每次收到跟這個 stock row 有關的事件都會
+      覆寫一次，所以名稱會跟著「最近一次異動」
+      自動更新，不是完全凍結不變。
+    end note
+    InvHandler -> StockRepo : SaveAsync(stock, ct)
+    StockRepo -> InvDB : update stocks\nset quantity=..., product_no=..., product_name=...,\n    unit=..., warehouse_name=...
+end
+
+== 讀取側：ListStocks 直接讀，沒有 join、沒有跨服務呼叫 ==
+
+actor "總管理者" as Admin
+
+box "Inventory.Api" #LightBlue
+    participant "ListStocksEndpoint" as ListEndpoint
+end box
+
+Admin -> ListEndpoint : GET /api/v1/stocks?productNo=&productName=&...
+ListEndpoint -> InvDB : select product_no, product_name, unit,\n       warehouse_name, quantity, cumulative_shipped\nfrom stocks\nwhere (@ProductNo is null or product_no ilike @ProductNo)\n...
+InvDB --> ListEndpoint : rows（名稱、文字篩選全部就地完成）
+ListEndpoint --> Admin : 200 OK
+
+note over InvDB
+  跟方案 A 比：不用 product_references/
+  warehouse_references 這兩張獨立快取表，
+  也不用 Organization 新增 Kafka —— 名稱
+  就是 stocks 表自己的欄位。
+  跟方案 B 比：查詢當下不呼叫任何其他服務，
+  Ordering/Organization 掛掉不影響庫存清單。
+  代價：如果某個商品「很久沒有任何入庫/出庫
+  異動」，它在 stocks 上的名稱就會停在最後一次
+  異動時的樣子，不會主動跟著 Ordering 改名而更新
+  ——跟 eShop 的 OrderItem.ProductName 完全同一種
+  取捨，只是我們套用在庫存快照上而不是訂單明細上。
+end note
+
+@enduml

@@ -1,0 +1,65 @@
+@startuml Release Stock on OutboundOrderRejected
+
+title 消費 OutboundOrderRejectedIntegrationEvent → 釋放預留（管理員審核後拒絕，庫存已經被 Inventory 預留）
+
+box "Ordering" #WhiteSmoke
+    participant "OutboxProcessor" as OrderingOutbox
+end box
+
+queue "Kafka\ntopic: ordering.events" as Kafka
+
+box "Inventory" #LightYellow
+    participant "IntegrationEventConsumer" as Consumer
+    participant "IPublisher" as Publisher
+    participant "OutboundOrderRejected\nIntegrationEventHandler" as Handler
+    participant "InboxGuard" as Inbox
+    participant "IStockRepository" as Repo
+    participant "Stock" as StockAggregate
+end box
+
+database "inventory_db" as DB
+
+OrderingOutbox -> Kafka : produce OutboundOrderRejectedIntegrationEvent
+activate Consumer
+Kafka -> Consumer : consumer.Consume()
+
+Consumer -> Inbox : BeginIfNotProcessedAsync(uow, inbox, notification.Id, ct)
+alt 已處理過
+    Inbox --> Consumer : false
+    note right of Consumer : 直接 return，不呼叫 PublishAsync
+else 尚未處理
+    Inbox --> Consumer : true（transaction 保持開啟）
+
+    Consumer -> Publisher : PublishAsync(notification, ct)
+    Publisher -> Handler : HandleAsync(notification, ct)
+
+    loop 每個 OutboundOrderItem
+        Handler -> Repo : GetByProductAndWarehouseAsync(productId, warehouseId, ct)
+
+        alt 找不到對應的 stock row
+            Repo --> Handler : Result.Failure
+            Handler -> Handler : logger.LogError(...)（continue）
+        else 找到
+            Repo --> Handler : Result.Success(stock)
+            Handler -> StockAggregate : ReleaseReservation(quantity)
+            StockAggregate -> StockAggregate : Quantity += quantity\nCumulativeShipped -= quantity
+            Handler -> Repo : SaveAsync(stock, ct)
+            Repo -> DB : update stocks
+        end
+    end
+
+    Handler -> Inbox : MarkProcessedAsync(notification.Id, ct)
+    Handler -> DB : CommitAsync(ct)
+    Publisher --> Consumer : 完成
+end
+
+Consumer -> Kafka : consumer.Commit(result)
+deactivate Consumer
+
+note over StockAggregate
+  跟 Decrease() 一樣的告誡：CumulativeShipped
+  理論上可能被併發的 TryReserve/Release 弄成
+  不一致的數字，目前刻意不加鎖處理。
+end note
+
+@enduml

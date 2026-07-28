@@ -1,0 +1,53 @@
+@startuml Outbound History
+
+title 取得出庫歷程（總管理者：全部倉庫可篩選 AdminOnly；倉庫管理者＋一般員工：限自己倉庫 WarehouseStaffOnly）—— 訂單層級，不攤開、不做加總
+
+actor "總管理者" as Admin
+actor "倉庫管理者 / 一般員工" as Staff
+
+box "Ordering.Api" #LightBlue
+    participant "ListOutboundHistoryEndpoint" as AdminEndpoint
+    participant "ListWarehouseOutboundHistoryEndpoint" as StaffEndpoint
+    participant "ICurrentUser" as CurrentUser
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "ListOutboundHistoryQueryHandler" as Handler
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IOutboundOrderReader" as Reader
+end box
+
+database "ordering_db" as DB
+
+== 總管理者：GET /api/v1/outbound/history?warehouseId=&completedFrom=&...  ==
+Admin -> AdminEndpoint : （warehouseId 可為 null，代表查全部倉庫）
+AdminEndpoint -> Sender : SendAsync(ListOutboundHistoryQuery(warehouseId, ...))
+
+== 倉庫管理者／一般員工：GET /api/v1/outbound/history/warehouse?... ==
+Staff -> StaffEndpoint : （不接受 warehouseId 參數）
+StaffEndpoint -> CurrentUser : WarehouseId
+StaffEndpoint -> Sender : SendAsync(ListOutboundHistoryQuery(currentUser.WarehouseId, ...))
+
+Sender -> Handler : HandleAsync(query, ct)
+Handler -> Reader : ListHistoryAsync(warehouseId, completedFrom, completedTo,\nproductNo, productName, unit, requestedBy, confirmedBy, ct)
+
+Reader -> DB : select 訂單層級一列一張單\nfrom outbound_orders\nwhere status in ('Confirmed','Rejected')  -- 只顯示已處理的\n  and (@WarehouseId is null or warehouse_id = @WarehouseId)\n  and （其餘篩選條件皆為 optional）
+DB --> Reader : rows（沒有分頁，也沒有 count(*) over()）
+Reader --> Handler : IReadOnlyList<OutboundHistoryDto>
+Handler --> Sender : Result.Success
+Sender --> Admin : 200 OK
+Sender --> Staff : 200 OK
+
+note over Reader, DB
+  跟入庫歷程（inbound-history.puml）刻意不同：
+  文件第5章「取得出庫歷程」只要求訂單層級的清單
+  （出庫單id/編號/倉庫/申請時間/完成時間/申請人/審核人），
+  不需要攤開成品項、也不需要加總金額 ——
+  要看某張單的品項明細，走 query-outbound.puml
+  裡的「取得出庫明細」。
+end note
+
+@enduml

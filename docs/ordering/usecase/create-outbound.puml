@@ -1,0 +1,71 @@
+@startuml Create Outbound Order
+
+title 申請出庫（POST /api/v1/outbound，WarehouseUserOnly）—— 建立時就是 Processing，觸發 Inventory 預留
+
+actor "一般員工\n(WarehouseUser)" as User
+
+box "Ordering.Api" #LightBlue
+    participant "CreateOutboundEndpoint" as Endpoint
+end box
+
+box "Ordering.Application" #LightYellow
+    participant "ISender" as Sender
+    participant "TransactionalDecorator" as Decorator
+    participant "CreateOutboundCommandHandler" as Handler
+    participant "OutboundOrderCreated\nDomainEventHandler" as DomainHandler
+end box
+
+box "Ordering.Domain" #Lavender
+    participant "OutboundOrder" as Order
+end box
+
+box "Ordering.Infrastructure" #WhiteSmoke
+    participant "IProductRepository" as ProductRepo
+    participant "IOutboundOrderRepository" as OrderRepo
+    participant "IOrderingUnitOfWork" as UoW
+    participant "IIntegrationEventWriter" as Writer
+end box
+
+database "ordering_db" as DB
+queue "Kafka\ntopic: ordering.events" as Kafka
+
+User -> Endpoint : POST /api/v1/outbound { orderNo, items[] }
+Endpoint -> Sender : SendAsync(CreateOutboundCommand)
+Sender -> Decorator : HandleAsync(request, next, ct)
+Decorator -> UoW : BeginAsync(ct)
+Decorator -> Handler : next()
+
+Handler -> ProductRepo : GetExistingIdsAsync(requestedProductIds, ct)
+alt 有商品編號不存在
+    Handler --> Decorator : Error 404 NotFound
+else 全部存在
+    Handler -> Order : OutboundOrder.Create(orderNo, warehouseId, requestedBy, items)
+    Order -> Order : Status = Processing\n（不是 Pending！管理員這時還看不到、審核不到）
+    Order -> Order : RaiseDomainEvent(OutboundOrderCreatedDomainEvent)
+    Order --> Handler : Result.Success(order)
+    Handler -> OrderRepo : AddAsync(order, ct)
+    OrderRepo -> DB : insert into outbound_orders, outbound_order_items
+    Handler --> Decorator : Result.Success(CreateOutboundDto { Status: "Processing" })
+end
+
+Decorator -> UoW : CommitAsync(ct)
+UoW -> DomainHandler : PublishAsync(OutboundOrderCreatedDomainEvent) → HandleAsync
+DomainHandler -> Writer : WriteAsync(OutboundOrderCreatedIntegrationEvent, ct)
+Writer -> DB : insert into outbox_messages（同一個 transaction）
+UoW -> DB : commit
+Decorator --> Sender : result
+Sender --> Endpoint : result
+Endpoint --> User : 201 Created { id, status: "Processing" }
+
+... 之後由 OutboxProcessor 背景輪詢送出 ...
+DB -> Kafka : OutboundOrderCreatedIntegrationEvent
+
+note over Kafka
+  接下來是跨 bounded context 的部分，
+  見 docs/inventory/usecase/reserve-stock-on-outbound-created.puml
+  （Inventory 消費、TryReserve、回覆 Reserved/Failed）
+  跟本資料夾的 consume-inventory-reply.puml
+  （Ordering 消費 Inventory 的回覆，轉成 Pending/Rejected）。
+end note
+
+@enduml

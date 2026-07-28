@@ -1,0 +1,159 @@
+@startuml Ordering Aggregates
+
+skinparam class {
+    BackgroundColor<<AggregateRoot>> LightYellow
+    BorderColor<<AggregateRoot>> DarkGoldenRod
+    BackgroundColor<<Entity>> White
+    BackgroundColor<<External>> WhiteSmoke
+    BorderColor<<External>> Gray
+}
+
+package "Product Aggregate" {
+    class Product <<AggregateRoot>> {
+        Id : Guid
+        ProductNo : string
+        Name : string
+        Unit : ProductUnit
+        Price : decimal
+        --
+        + {static} Create(productNo: string, name: string, unit: ProductUnit, price: decimal) : Result<Product>
+    }
+}
+
+package "ProductUnit Aggregate" {
+    class ProductUnit <<AggregateRoot>> {
+        Name : string
+        --
+        + {static} Create(name: string) : Result<ProductUnit>
+    }
+}
+
+package "InboundOrder Aggregate" {
+    enum InboundOrderStatus {
+        Pending
+        Confirmed
+        Rejected
+    }
+
+    class InboundOrder <<AggregateRoot>> {
+        Id : Guid
+        OrderNo : string
+        WarehouseId : Guid
+        Status : InboundOrderStatus
+        RejectReason : string?
+        RequestedBy : Guid
+        RequestedAt : DateTime
+        ConfirmedBy : Guid?
+        ConfirmedAt : DateTime?
+        --
+        + {static} Create(orderNo, warehouseId, requestedBy, items) : Result<InboundOrder>
+        + Confirm(confirmedBy: Guid) : Result
+        + Reject(confirmedBy: Guid, reason: string) : Result
+    }
+
+    class InboundOrderItem <<Entity>> {
+        ProductId : Guid
+        Quantity : int
+        UnitPrice : decimal
+    }
+
+    InboundOrder *-- "1..*" InboundOrderItem
+    InboundOrder --> InboundOrderStatus
+}
+
+package "OutboundOrder Aggregate" {
+    enum OutboundOrderStatus {
+        Processing
+        Pending
+        Confirmed
+        Rejected
+    }
+
+    class OutboundOrder <<AggregateRoot>> {
+        Id : Guid
+        OrderNo : string
+        WarehouseId : Guid
+        Status : OutboundOrderStatus
+        RejectReason : string?
+        RequestedBy : Guid
+        RequestedAt : DateTime
+        ConfirmedBy : Guid?
+        ConfirmedAt : DateTime?
+        --
+        + {static} Create(orderNo, warehouseId, requestedBy, items) : Result<OutboundOrder>
+        + MarkReserved() : Result
+        + FailReservation(reason: string) : Result
+        + Confirm(confirmedBy: Guid) : Result
+        + Reject(confirmedBy: Guid, reason: string) : Result
+    }
+
+    class OutboundOrderItem <<Entity>> {
+        ProductId : Guid
+        Quantity : int
+    }
+
+    OutboundOrder *-- "1..*" OutboundOrderItem
+    OutboundOrder --> OutboundOrderStatus
+}
+
+class "Warehouse" as ExternalWarehouse <<External>> {
+    (Organization Bounded Context)
+}
+
+' Cross-aggregate references within Ordering: by Id only, never by object composition
+InboundOrderItem ..> Product : ProductId (reference only)
+OutboundOrderItem ..> Product : ProductId (reference only)
+Product ..> ProductUnit : Unit (reference only)
+
+' Cross-bounded-context reference: by Id only, resolved via JWT claim / API call, never a direct FK
+InboundOrder ..> ExternalWarehouse : WarehouseId (cross-context reference)
+OutboundOrder ..> ExternalWarehouse : WarehouseId (cross-context reference)
+
+note right of InboundOrderStatus
+  沒有 Processing 狀態：入庫沒有「數量夠不夠」
+  這種會失敗的前提，Create() 直接進 Pending，
+  可以馬上被倉庫管理者審核。
+end note
+
+note right of OutboundOrderStatus
+  Processing 是為了解一個 race condition：
+  Create() 先進 Processing（管理員看不到，
+  不能審核），等 Inventory Bounded Context
+  回覆「已預留」才轉 Pending，這時才對
+  管理員可見、可審核。
+  如果 Inventory 回覆「庫存不足」，
+  直接從 Processing 轉 Rejected，
+  永遠不會經過 Pending。
+end note
+
+note right of OutboundOrder
+  Create() 在同一個 local transaction 內：
+  1. 寫入 outbound_orders（Status = Processing）
+  2. 寫入 Outbox 一筆 OutboundOrderCreatedIntegrationEvent
+  由 OutboxProcessor 送到 Kafka topic「ordering.events」，
+  供 Inventory Bounded Context 訂閱，嘗試扣/預留庫存。
+
+  Inventory 處理完會回覆到它自己的 Kafka topic
+  「inventory.events」：
+  - OutboundInventoryReservedIntegrationEvent → MarkReserved()
+  - OutboundInventoryReservationFailedIntegrationEvent → FailReservation()
+  由 IntegrationEventConsumer 訂閱、消費。
+
+  Reject()（管理員審核後拒絕，此時庫存已經被 Inventory 預留）
+  一樣會寫入 Outbox 一筆 OutboundOrderRejectedIntegrationEvent，
+  通知 Inventory 把預留的庫存加回去。
+end note
+
+note right of InboundOrder
+  Create() 在同一個 local transaction 內：
+  1. 寫入 inbound_orders（Status = Pending）
+  2. 寫入 Outbox 一筆 InboundOrderCreatedIntegrationEvent
+  由 OutboxProcessor 送到「ordering.events」，
+  Inventory 收到後直接增加庫存（樂觀，入庫沒有失敗的前提）。
+
+  Reject()（管理員審核後拒絕，庫存已經被加過了）
+  會寫入 Outbox 一筆 InboundOrderRejectedIntegrationEvent，
+  通知 Inventory 把剛剛加的庫存扣回去。
+end note
+
+@enduml
