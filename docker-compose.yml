@@ -3,23 +3,36 @@ name: ims
 services:
   postgres:
     image: postgres:18
-    env_file:
-      - ./infra/postgres/postgres.env
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     volumes:
       - pgdata:/var/lib/postgresql
       - ./infra/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\""]
       interval: 5s
       timeout: 5s
       retries: 10
 
   kafka:
     image: confluentinc/cp-kafka:7.5.12
-    env_file:
-      - ./infra/kafka/kafka.env
+    environment:
+      KAFKA_NODE_ID: "${KAFKA_NODE_ID}"
+      KAFKA_PROCESS_ROLES: "${KAFKA_PROCESS_ROLES}"
+      KAFKA_LISTENERS: "${KAFKA_LISTENERS}"
+      KAFKA_ADVERTISED_LISTENERS: "${KAFKA_ADVERTISED_LISTENERS}"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "${KAFKA_CONTROLLER_LISTENER_NAMES}"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "${KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "${KAFKA_INTER_BROKER_LISTENER_NAME}"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "${KAFKA_CONTROLLER_QUORUM_VOTERS}"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "${KAFKA_AUTO_CREATE_TOPICS_ENABLE}"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "${KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR}"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "${KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR}"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "${KAFKA_TRANSACTION_STATE_LOG_MIN_ISR}"
+      CLUSTER_ID: "${CLUSTER_ID}"
     ports:
       - "9092:29092"
     healthcheck:
@@ -31,10 +44,20 @@ services:
   jaeger:
     image: jaegertracing/all-in-one:1.65.0
     environment:
-      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_OTLP_ENABLED: "${COLLECTOR_OTLP_ENABLED}"
     ports:
       - "16686:16686" # Jaeger UI
       - "4317:4317"   # OTLP gRPC receiver
+
+  redis:
+    image: redis:8
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   organization-migrate:
     image: migrate/migrate:v4.19.1
@@ -45,7 +68,7 @@ services:
       - ./src/Organization/Migrations:/migrations:ro
     command:
       - -path=/migrations
-      - -database=postgres://postgres:password@postgres:5432/organization_db?sslmode=disable
+      - -database=${ORGANIZATION_MIGRATION_DATABASE_URL}
       - up
 
   ordering-migrate:
@@ -57,7 +80,7 @@ services:
       - ./src/Ordering/Migrations:/migrations:ro
     command:
       - -path=/migrations
-      - -database=postgres://postgres:password@postgres:5432/ordering_db?sslmode=disable
+      - -database=${ORDERING_MIGRATION_DATABASE_URL}
       - up
 
   inventory-migrate:
@@ -69,7 +92,7 @@ services:
       - ./src/Inventory/Migrations:/migrations:ro
     command:
       - -path=/migrations
-      - -database=postgres://postgres:password@postgres:5432/inventory_db?sslmode=disable
+      - -database=${INVENTORY_MIGRATION_DATABASE_URL}
       - up
 
   organization:
@@ -84,14 +107,14 @@ services:
       jaeger:
         condition: service_started
     environment:
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Username=postgres;Password=password;Database=organization_db
-      JwtSetting__Issuer: http://organization:8080
-      JwtSetting__Audience: wms
-      JwtSetting__RefreshTokenExpiresInDay: "7"
-      JwtSetting__AccessTokenExpiresInMinuets: "30"
-      Admin__Password: 1qazXSW@
-      RSA_PEM_PATH: /app/keys/org-private.pem
-      Otel__OtlpEndpoint: http://jaeger:4317
+      ConnectionStrings__DefaultConnection: "${ORGANIZATION_CONNECTION_STRING}"
+      JwtSetting__Issuer: "${ORGANIZATION_JWT_ISSUER}"
+      JwtSetting__Audience: "${JWT_AUDIENCE}"
+      JwtSetting__RefreshTokenExpiresInDay: "${ORGANIZATION_JWT_REFRESH_TOKEN_EXPIRES_IN_DAY}"
+      JwtSetting__AccessTokenExpiresInMinuets: "${ORGANIZATION_JWT_ACCESS_TOKEN_EXPIRES_IN_MINUETS}"
+      Admin__Password: "${ADMIN_PASSWORD}"
+      RSA_PEM_PATH: "${RSA_PEM_PATH}"
+      Otel__OtlpEndpoint: "${OTEL_OTLP_ENDPOINT}"
     ports:
       - "5032:8080"
     healthcheck:
@@ -117,15 +140,18 @@ services:
         condition: service_healthy
       jaeger:
         condition: service_started
+      redis:
+        condition: service_healthy
     environment:
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Username=postgres;Password=password;Database=ordering_db
-      JwtSetting__Authority: http://organization:8080
-      JwtSetting__Audience: wms
-      Kafka__BootstrapServers: kafka:9092
-      Kafka__Topics__Ordering: ordering.events
-      Kafka__Topics__Inventory: inventory.events
-      Kafka__Topics__InventoryDeadLetter: inventory.events.dlq
-      Otel__OtlpEndpoint: http://jaeger:4317
+      ConnectionStrings__DefaultConnection: "${ORDERING_CONNECTION_STRING}"
+      JwtSetting__Authority: "${JWT_AUTHORITY}"
+      JwtSetting__Audience: "${JWT_AUDIENCE}"
+      Kafka__BootstrapServers: "${KAFKA_BOOTSTRAP_SERVERS}"
+      Kafka__Topics__Ordering: "${KAFKA_ORDERING_TOPIC}"
+      Kafka__Topics__Inventory: "${KAFKA_INVENTORY_TOPIC}"
+      Kafka__Topics__InventoryDeadLetter: "${KAFKA_INVENTORY_DEAD_LETTER_TOPIC}"
+      Otel__OtlpEndpoint: "${OTEL_OTLP_ENDPOINT}"
+      Redis__ConnectionString: "${REDIS_CONNECTION_STRING}"
     ports:
       - "5116:8080"
 
@@ -145,14 +171,14 @@ services:
       jaeger:
         condition: service_started
     environment:
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Username=postgres;Password=password;Database=inventory_db
-      JwtSetting__Authority: http://organization:8080
-      JwtSetting__Audience: wms
-      Kafka__BootstrapServers: kafka:9092
-      Kafka__Topics__Ordering: ordering.events
-      Kafka__Topics__OrderingDeadLetter: ordering.events.dlq
-      Kafka__Topics__Inventory: inventory.events
-      Otel__OtlpEndpoint: http://jaeger:4317
+      ConnectionStrings__DefaultConnection: "${INVENTORY_CONNECTION_STRING}"
+      JwtSetting__Authority: "${JWT_AUTHORITY}"
+      JwtSetting__Audience: "${JWT_AUDIENCE}"
+      Kafka__BootstrapServers: "${KAFKA_BOOTSTRAP_SERVERS}"
+      Kafka__Topics__Ordering: "${KAFKA_ORDERING_TOPIC}"
+      Kafka__Topics__OrderingDeadLetter: "${KAFKA_ORDERING_DEAD_LETTER_TOPIC}"
+      Kafka__Topics__Inventory: "${KAFKA_INVENTORY_TOPIC}"
+      Otel__OtlpEndpoint: "${OTEL_OTLP_ENDPOINT}"
     ports:
       - "5205:8080"
 
