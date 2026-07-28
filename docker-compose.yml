@@ -1,0 +1,160 @@
+name: ims
+
+services:
+  postgres:
+    image: postgres:18
+    env_file:
+      - ./infra/postgres/postgres.env
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./infra/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.12
+    env_file:
+      - ./infra/kafka/kafka.env
+    ports:
+      - "9092:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.65.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317:4317"   # OTLP gRPC receiver
+
+  organization-migrate:
+    image: migrate/migrate:v4.19.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src/Organization/Migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://postgres:password@postgres:5432/organization_db?sslmode=disable
+      - up
+
+  ordering-migrate:
+    image: migrate/migrate:v4.19.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src/Ordering/Migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://postgres:password@postgres:5432/ordering_db?sslmode=disable
+      - up
+
+  inventory-migrate:
+    image: migrate/migrate:v4.19.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src/Inventory/Migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://postgres:password@postgres:5432/inventory_db?sslmode=disable
+      - up
+
+  organization:
+    build:
+      context: .
+      dockerfile: src/Organization/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      organization-migrate:
+        condition: service_completed_successfully
+      jaeger:
+        condition: service_started
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Username=postgres;Password=password;Database=organization_db
+      JwtSetting__Issuer: http://organization:8080
+      JwtSetting__Audience: wms
+      JwtSetting__RefreshTokenExpiresInDay: "7"
+      JwtSetting__AccessTokenExpiresInMinuets: "30"
+      Admin__Password: 1qazXSW@
+      RSA_PEM_PATH: /app/keys/org-private.pem
+      Otel__OtlpEndpoint: http://jaeger:4317
+    ports:
+      - "5032:8080"
+    healthcheck:
+      # aspnet runtime image 沒裝 curl/wget,/bin/sh 又是 dash 不支援 /dev/tcp,
+      # 所以要明確叫 bash 來用它內建的 /dev/tcp 直接送 HTTP request。
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q 'HTTP/1.1 200'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ordering:
+    build:
+      context: .
+      dockerfile: src/Ordering/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      ordering-migrate:
+        condition: service_completed_successfully
+      organization:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Username=postgres;Password=password;Database=ordering_db
+      JwtSetting__Authority: http://organization:8080
+      JwtSetting__Audience: wms
+      Kafka__BootstrapServers: kafka:9092
+      Kafka__Topics__Ordering: ordering.events
+      Kafka__Topics__Inventory: inventory.events
+      Kafka__Topics__InventoryDeadLetter: inventory.events.dlq
+      Otel__OtlpEndpoint: http://jaeger:4317
+    ports:
+      - "5116:8080"
+
+  inventory:
+    build:
+      context: .
+      dockerfile: src/Inventory/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      inventory-migrate:
+        condition: service_completed_successfully
+      organization:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Username=postgres;Password=password;Database=inventory_db
+      JwtSetting__Authority: http://organization:8080
+      JwtSetting__Audience: wms
+      Kafka__BootstrapServers: kafka:9092
+      Kafka__Topics__Ordering: ordering.events
+      Kafka__Topics__OrderingDeadLetter: ordering.events.dlq
+      Kafka__Topics__Inventory: inventory.events
+      Otel__OtlpEndpoint: http://jaeger:4317
+    ports:
+      - "5205:8080"
+
+volumes:
+  pgdata:

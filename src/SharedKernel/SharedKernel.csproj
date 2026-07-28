@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Davish.Result" />
+    <PackageReference Include="Davish.Result.Extension" />
+    <PackageReference Include="Davish.Sendr.Notification.Abstractions" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,3 @@
+CREATE DATABASE organization_db
+CREATE DATABASE ordering_db
+CREATE DATABASE inventory_db

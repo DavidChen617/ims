@@ -1,0 +1,39 @@
+<Solution>
+  <Folder Name="/src/Organization/">
+    <Project Path="src/Organization/Api/Api.csproj" />
+    <Project Path="src/Organization/Domain/Domain.csproj" />
+    <Project Path="src/Organization/Infrastructure/Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/MessageContract/MessageContract.csproj" />
+  </Folder>
+  <Folder Name="/src/Ordering/">
+    <Project Path="src/Ordering/Application/Application.csproj" />
+    <Project Path="src/Ordering/Domain/Domain.csproj" />
+    <Project Path="src/Ordering/Infrastructure/Infrastructure.csproj" />
+    <Project Path="src/Ordering/Api/Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Inventory/">
+    <Project Path="src/Inventory/Application/Application.csproj" />
+    <Project Path="src/Inventory/Domain/Domain.csproj" />
+    <Project Path="src/Inventory/Infrastructure/Infrastructure.csproj" />
+    <Project Path="src/Inventory/Api/Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/ApiTests/">
+    <Project Path="tests/ApiTests/Organization.ApiTest/Organization.ApiTest.csproj" />
+    <Project Path="tests/ApiTests/Ordering.ApiTest/Ordering.ApiTest.csproj" />
+    <Project Path="tests/ApiTests/Inventory.ApiTest/Inventory.ApiTest.csproj" />
+  </Folder>
+  <Folder Name="/tests/IntegrationTests/">
+    <Project Path="tests/IntegrationTests/Organization.IntegrationTest/Organization.IntegrationTest.csproj" />
+    <Project Path="tests/IntegrationTests/Ordering.IntegrationTest/Ordering.IntegrationTest.csproj" />
+    <Project Path="tests/IntegrationTests/Inventory.IntegrationTest/Inventory.IntegrationTest.csproj" />
+  </Folder>
+  <Folder Name="/tests/UnitTests/">
+    <Project Path="tests/UnitTests/Organization.UnitTest/Organization.UnitTest.csproj" />
+    <Project Path="tests/UnitTests/Ordering.UnitTest/Ordering.UnitTest.csproj" />
+    <Project Path="tests/UnitTests/Inventory.UnitTest/Inventory.UnitTest.csproj" />
+  </Folder>
+  <Project Path="src/SharedKernel/SharedKernel.csproj" />
+</Solution>
