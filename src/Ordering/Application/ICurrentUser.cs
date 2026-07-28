@@ -1,0 +1,11 @@
+namespace Application;
+
+public interface ICurrentUser
+{
+    Guid UserId { get; }
+    string Role { get; }
+    string Name { get; }
+    string Username { get; }
+    Guid? WarehouseId { get; }
+    string? WarehouseName { get; }
+}
