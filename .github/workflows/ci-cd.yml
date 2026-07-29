@@ -30,6 +30,8 @@ jobs:
       - run: dotnet user-jwts key --project src/Ordering/Api
       - run: dotnet user-jwts key --project src/Inventory/Api
 
+      - run: openssl genrsa -out tests/test-private.pem 2048
+
       - run: dotnet test Microservices.slnx --configuration Release --no-build
 
   build-and-push-image:
