@@ -184,5 +184,19 @@ services:
     ports:
       - "5205:8080"
 
+  nginx:
+    build:
+      context: .
+      dockerfile: src/Web/Dockerfile
+    depends_on:
+      organization:
+        condition: service_healthy
+      ordering:
+        condition: service_started
+      inventory:
+        condition: service_started
+    ports:
+      - "80:80"
+
 volumes:
   pgdata:
