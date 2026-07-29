@@ -26,6 +26,10 @@ jobs:
 
       - run: dotnet restore Microservices.slnx
       - run: dotnet build Microservices.slnx --configuration Release --no-restore
+
+      - run: dotnet user-jwts key --project src/Ordering/Api
+      - run: dotnet user-jwts key --project src/Inventory/Api
+
       - run: dotnet test Microservices.slnx --configuration Release --no-build
 
   build-and-push-image:
