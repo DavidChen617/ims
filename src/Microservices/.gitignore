@@ -10,6 +10,14 @@
 # scripts/00-setup.sh 產生的共用狀態,裡面有活的 JWT
 scripts/.state.env
 
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+crash.*.log
+
 # User-specific files
 *.rsuser
 *.suo
