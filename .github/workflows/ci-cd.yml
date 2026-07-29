@@ -27,8 +27,7 @@ jobs:
       - run: dotnet restore Microservices.slnx
       - run: dotnet build Microservices.slnx --configuration Release --no-restore
 
-      - run: dotnet user-jwts key --project src/Ordering/Api
-      - run: dotnet user-jwts key --project src/Inventory/Api
+      - run: echo "Authentication__Schemes__Bearer__SigningKeys__0__Value=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
 
       - run: openssl genrsa -out tests/test-private.pem 2048
 
