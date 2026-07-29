@@ -8,7 +8,8 @@ namespace Infrastructure.Persistence.Readers;
 public sealed class StockReader(IInventoryUnitOfWork unitOfWork) : IStockReader
 {
     public async Task<Result<PagedResult<StockDto>>> ListAsync(
-        Guid? warehouseId, Guid? productId, string? productNo, string? productName,
+        Guid? warehouseId, Guid? productId, string? productNo, string? productName, string? unit,
+        int? quantityMin, int? quantityMax, int? cumulativeShippedMin, int? cumulativeShippedMax,
         int page, int size, CancellationToken ct)
     {
         var parameters = new
@@ -17,6 +18,11 @@ public sealed class StockReader(IInventoryUnitOfWork unitOfWork) : IStockReader
             ProductId = productId,
             ProductNo = productNo is null ? null : $"%{productNo}%",
             ProductName = productName is null ? null : $"%{productName}%",
+            Unit = unit,
+            QuantityMin = quantityMin,
+            QuantityMax = quantityMax,
+            CumulativeShippedMin = cumulativeShippedMin,
+            CumulativeShippedMax = cumulativeShippedMax,
             Size = size,
             Offset = (page - 1) * size
         };
@@ -29,6 +35,11 @@ public sealed class StockReader(IInventoryUnitOfWork unitOfWork) : IStockReader
               and (@ProductId::uuid is null or product_id = @ProductId::uuid)
               and (@ProductNo is null or product_no ilike @ProductNo)
               and (@ProductName is null or product_name ilike @ProductName)
+              and (@Unit is null or unit = @Unit)
+              and (@QuantityMin::int is null or quantity >= @QuantityMin::int)
+              and (@QuantityMax::int is null or quantity <= @QuantityMax::int)
+              and (@CumulativeShippedMin::int is null or cumulative_shipped >= @CumulativeShippedMin::int)
+              and (@CumulativeShippedMax::int is null or cumulative_shipped <= @CumulativeShippedMax::int)
             """,
             parameters,
             cancellationToken: ct,
@@ -46,6 +57,11 @@ public sealed class StockReader(IInventoryUnitOfWork unitOfWork) : IStockReader
               and (@ProductId::uuid is null or product_id = @ProductId::uuid)
               and (@ProductNo is null or product_no ilike @ProductNo)
               and (@ProductName is null or product_name ilike @ProductName)
+              and (@Unit is null or unit = @Unit)
+              and (@QuantityMin::int is null or quantity >= @QuantityMin::int)
+              and (@QuantityMax::int is null or quantity <= @QuantityMax::int)
+              and (@CumulativeShippedMin::int is null or cumulative_shipped >= @CumulativeShippedMin::int)
+              and (@CumulativeShippedMax::int is null or cumulative_shipped <= @CumulativeShippedMax::int)
             order by product_id, warehouse_id
             limit @Size offset @Offset
             """,

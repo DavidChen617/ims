@@ -27,15 +27,27 @@ public static class ListWarehouseStocksEndpoint
         ISender sender,
         ICurrentUser currentUser,
         CancellationToken ct,
-        Guid? productId = null,
-        string? productNo = null,
-        string? productName = null,
-        int page = 1,
-        int size = 20)
+        [AsParameters] ListWarehouseStocksRequest request)
     {
         var result = await sender.SendAsync(
-            new ListStocksQuery(currentUser.WarehouseId, productId, productNo, productName, page, size), ct);
+            new ListStocksQuery(
+                currentUser.WarehouseId, request.ProductId, request.ProductNo, request.ProductName, request.Unit,
+                request.QuantityMin, request.QuantityMax, request.CumulativeShippedMin, request.CumulativeShippedMax,
+                request.Page ?? 1, request.Size ?? 20),
+            ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListWarehouseStocksRequest(
+    Guid? ProductId = null,
+    string? ProductNo = null,
+    string? ProductName = null,
+    string? Unit = null,
+    int? QuantityMin = null,
+    int? QuantityMax = null,
+    int? CumulativeShippedMin = null,
+    int? CumulativeShippedMax = null,
+    int? Page = null,
+    int? Size = null);

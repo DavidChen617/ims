@@ -26,7 +26,7 @@ public static class ApplicationConfig
                 .AddRequestHandler<GetInboundOrderQuery, Result<InboundOrderDto>, GetInboundOrderQueryHandler>()
                 .AddRequestHandler<GetInboundOrderForAdminQuery, Result<InboundOrderDto>,
                     GetInboundOrderForAdminQueryHandler>()
-                .AddRequestHandler<ListPendingInboundOrdersQuery, Result<PendingInboundOrdersDto>,
+                .AddRequestHandler<ListPendingInboundOrdersQuery, Result<PagedResult<PendingInboundOrderDto>>,
                     ListPendingInboundOrdersQueryHandler>()
                 .AddRequestHandler<ListInboundHistoryQuery, Result<InboundHistoryResultDto>,
                     ListInboundHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())
@@ -41,7 +41,7 @@ public static class ApplicationConfig
                 .AddRequestHandler<GetOutboundOrderQuery, Result<OutboundOrderDto>, GetOutboundOrderQueryHandler>()
                 .AddRequestHandler<GetOutboundOrderForAdminQuery, Result<OutboundOrderDto>,
                     GetOutboundOrderForAdminQueryHandler>()
-                .AddRequestHandler<ListPendingOutboundOrdersQuery, Result<PendingOutboundOrdersDto>,
+                .AddRequestHandler<ListPendingOutboundOrdersQuery, Result<PagedResult<PendingOutboundOrderDto>>,
                     ListPendingOutboundOrdersQueryHandler>()
                 .AddRequestHandler<ListOutboundHistoryQuery, Result<PagedResult<OutboundHistoryDto>>,
                     ListOutboundHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())

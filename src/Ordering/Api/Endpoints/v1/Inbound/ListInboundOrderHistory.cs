@@ -30,24 +30,28 @@ public static class ListInboundOrderHistoryEndpoint
         ISender sender,
         ICurrentUser currentUser,
         CancellationToken ct,
-        InboundOrderStatus? status = null,
-        string? productNo = null,
-        string? productName = null,
-        Guid? requestedBy = null,
-        Guid? confirmedBy = null,
-        DateTime? requestedFrom = null,
-        DateTime? requestedTo = null,
-        DateTime? completedFrom = null,
-        DateTime? completedTo = null,
-        decimal? amountMin = null,
-        decimal? amountMax = null)
+        [AsParameters] ListInboundOrderHistoryRequest request)
     {
         var result = await sender.SendAsync(
             new ListInboundOrderHistoryQuery(
-                currentUser.WarehouseId!.Value, status, productNo, productName, requestedBy, confirmedBy,
-                requestedFrom, requestedTo, completedFrom, completedTo, amountMin, amountMax),
+                currentUser.WarehouseId!.Value, request.Status, request.ProductNo, request.ProductName,
+                request.RequestedBy, request.ConfirmedBy, request.RequestedFrom, request.RequestedTo,
+                request.CompletedFrom, request.CompletedTo, request.AmountMin, request.AmountMax),
             ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListInboundOrderHistoryRequest(
+    InboundOrderStatus? Status = null,
+    string? ProductNo = null,
+    string? ProductName = null,
+    Guid? RequestedBy = null,
+    Guid? ConfirmedBy = null,
+    DateTime? RequestedFrom = null,
+    DateTime? RequestedTo = null,
+    DateTime? CompletedFrom = null,
+    DateTime? CompletedTo = null,
+    decimal? AmountMin = null,
+    decimal? AmountMax = null);

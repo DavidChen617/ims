@@ -26,11 +26,13 @@ public static class ListPendingOutboundQuantitiesEndpoint
     private static async Task<IResult> Handle(
         ISender sender,
         CancellationToken ct,
-        Guid? warehouseId = null,
-        Guid? productId = null)
+        [AsParameters] ListPendingOutboundQuantitiesRequest request)
     {
-        var result = await sender.SendAsync(new ListPendingOutboundQuantitiesQuery(warehouseId, productId), ct);
+        var result = await sender.SendAsync(
+            new ListPendingOutboundQuantitiesQuery(request.WarehouseId, request.ProductId), ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListPendingOutboundQuantitiesRequest(Guid? WarehouseId = null, Guid? ProductId = null);

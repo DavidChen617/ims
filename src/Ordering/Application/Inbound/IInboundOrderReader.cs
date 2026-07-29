@@ -7,10 +7,11 @@ public interface IInboundOrderReader
 {
     Task<Result<InboundOrderDto>> GetByIdAsync(Guid id, CancellationToken ct);
     Task<Result<InboundOrderDto>> GetByIdAsync(Guid id, Guid warehouseId, CancellationToken ct);
-    Task<Result<IReadOnlyList<PendingInboundOrderDto>>> ListPendingAsync(Guid warehouseId, CancellationToken ct);
+    Task<Result<PagedResult<PendingInboundOrderDto>>> ListPendingAsync(Guid warehouseId, int page, int size, CancellationToken ct);
 
     Task<Result<InboundHistoryResultDto>> ListHistoryAsync(
         Guid? warehouseId,
+        string? orderNo,
         string? productNo,
         string? productName,
         Guid? requestedBy,
@@ -18,6 +19,10 @@ public interface IInboundOrderReader
         InboundOrderStatus? status,
         DateTime? requestedFrom,
         DateTime? requestedTo,
+        int? quantityMin,
+        int? quantityMax,
+        decimal? unitPriceMin,
+        decimal? unitPriceMax,
         decimal? amountMin,
         decimal? amountMax,
         int page,

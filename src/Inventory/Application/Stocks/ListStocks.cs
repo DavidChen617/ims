@@ -7,6 +7,11 @@ public sealed record ListStocksQuery(
     Guid? ProductId,
     string? ProductNo,
     string? ProductName,
+    string? Unit,
+    int? QuantityMin,
+    int? QuantityMax,
+    int? CumulativeShippedMin,
+    int? CumulativeShippedMax,
     int Page,
     int Size
 ) : IQuery<Result<PagedResult<StockDto>>>;
@@ -29,7 +34,8 @@ public sealed class ListStocksQueryHandler(
         ListStocksQuery request, CancellationToken cancellationToken)
     {
         return await reader.ListAsync(
-            request.WarehouseId, request.ProductId, request.ProductNo, request.ProductName,
+            request.WarehouseId, request.ProductId, request.ProductNo, request.ProductName, request.Unit,
+            request.QuantityMin, request.QuantityMax, request.CumulativeShippedMin, request.CumulativeShippedMax,
             request.Page, request.Size, cancellationToken);
     }
 }

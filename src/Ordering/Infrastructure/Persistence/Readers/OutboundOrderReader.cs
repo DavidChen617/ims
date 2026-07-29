@@ -73,35 +73,44 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
             items);
     }
 
-    public async Task<Result<IReadOnlyList<PendingOutboundOrderDto>>> ListPendingAsync(Guid warehouseId, CancellationToken ct)
+    public async Task<Result<PagedResult<PendingOutboundOrderDto>>> ListPendingAsync(
+        Guid warehouseId, int page, int size, CancellationToken ct)
     {
         var cmd = new CommandDefinition(
             """
-            select id, order_no
+            select id, order_no, count(*) over()::int as total_count
             from outbound_orders
             where warehouse_id = @WarehouseId and status = @Status
             order by requested_at
+            limit @Size offset @Offset
             """,
-            new { WarehouseId = warehouseId, Status = OutboundOrderStatus.Pending },
+            new { WarehouseId = warehouseId, Status = OutboundOrderStatus.Pending, Size = size, Offset = (page - 1) * size },
             cancellationToken: ct,
             transaction: unitOfWork.Transaction
         );
 
-        var orders = await unitOfWork.Connection.QueryAsync<PendingOutboundOrderDto>(cmd);
+        var rows = (await unitOfWork.Connection.QueryAsync<PendingRow>(cmd)).ToList();
+        var items = rows.Select(r => new PendingOutboundOrderDto(r.Id, r.OrderNo)).ToList();
+        var totalCount = rows.Count > 0 ? rows[0].TotalCount : 0;
 
-        return Result.Success<IReadOnlyList<PendingOutboundOrderDto>>(orders.ToList());
+        return new PagedResult<PendingOutboundOrderDto>(items, totalCount, page, size);
     }
+
+    private sealed record PendingRow(Guid Id, string OrderNo, int TotalCount);
 
     public async Task<Result<PagedResult<OutboundHistoryDto>>> ListHistoryAsync(
         Guid? warehouseId,
+        string? orderNo,
         OutboundOrderStatus? status,
+        DateTime? requestedFrom,
+        DateTime? requestedTo,
         DateTime? completedFrom,
         DateTime? completedTo,
         string? productNo,
         string? productName,
         string? unit,
-        Guid? requestedBy,
-        Guid? confirmedBy,
+        string? requestedByName,
+        string? confirmedByName,
         int page,
         int size,
         CancellationToken ct)
@@ -115,10 +124,13 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
             where o.status in (@Confirmed, @Rejected)
               and (@Status::smallint is null or o.status = @Status::smallint)
               and (@WarehouseId::uuid is null or o.warehouse_id = @WarehouseId::uuid)
+              and (@OrderNo is null or o.order_no ilike '%' || @OrderNo || '%')
+              and (@RequestedFrom::timestamp is null or o.requested_at >= @RequestedFrom::timestamp)
+              and (@RequestedTo::timestamp is null or o.requested_at <= @RequestedTo::timestamp)
               and (@CompletedFrom::timestamp is null or o.confirmed_at >= @CompletedFrom::timestamp)
               and (@CompletedTo::timestamp is null or o.confirmed_at <= @CompletedTo::timestamp)
-              and (@RequestedBy::uuid is null or o.requested_by = @RequestedBy::uuid)
-              and (@ConfirmedBy::uuid is null or o.confirmed_by = @ConfirmedBy::uuid)
+              and (@RequestedByName is null or o.requested_by_name ilike '%' || @RequestedByName || '%')
+              and (@ConfirmedByName is null or o.confirmed_by_name ilike '%' || @ConfirmedByName || '%')
               and (
                 (@ProductNo is null and @ProductName is null and @Unit is null)
                 or exists (
@@ -126,7 +138,7 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
                     from outbound_order_items i
                     join products p on p.id = i.product_id
                     where i.outbound_order_id = o.id
-                      and (@ProductNo is null or p.product_no = @ProductNo)
+                      and (@ProductNo is null or p.product_no ilike '%' || @ProductNo || '%')
                       and (@ProductName is null or p.name ilike '%' || @ProductName || '%')
                       and (@Unit is null or p.unit = @Unit)
                 )
@@ -140,10 +152,13 @@ public sealed class OutboundOrderReader(IOrderingUnitOfWork unitOfWork) : IOutbo
                 Rejected = OutboundOrderStatus.Rejected,
                 Status = status,
                 WarehouseId = warehouseId,
+                OrderNo = orderNo,
+                RequestedFrom = requestedFrom,
+                RequestedTo = requestedTo,
                 CompletedFrom = completedFrom,
                 CompletedTo = completedTo,
-                RequestedBy = requestedBy,
-                ConfirmedBy = confirmedBy,
+                RequestedByName = requestedByName,
+                ConfirmedByName = confirmedByName,
                 ProductNo = productNo,
                 ProductName = productName,
                 Unit = unit,

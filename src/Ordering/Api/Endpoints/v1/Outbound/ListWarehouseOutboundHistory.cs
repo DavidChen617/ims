@@ -28,23 +28,30 @@ public static class ListWarehouseOutboundHistoryEndpoint
         ISender sender,
         ICurrentUser currentUser,
         CancellationToken ct,
-        OutboundOrderStatus? status = null,
-        DateTime? completedFrom = null,
-        DateTime? completedTo = null,
-        string? productNo = null,
-        string? productName = null,
-        string? unit = null,
-        Guid? requestedBy = null,
-        Guid? confirmedBy = null,
-        int page = 1,
-        int size = 20)
+        [AsParameters] ListWarehouseOutboundHistoryRequest request)
     {
         var result = await sender.SendAsync(
             new ListOutboundHistoryQuery(
-                currentUser.WarehouseId, status, completedFrom, completedTo, productNo, productName, unit, requestedBy,
-                confirmedBy, page, size),
+                currentUser.WarehouseId, request.OrderNo, request.Status, request.RequestedFrom, request.RequestedTo,
+                request.CompletedFrom, request.CompletedTo, request.ProductNo, request.ProductName, request.Unit,
+                request.RequestedByName, request.ConfirmedByName, request.Page ?? 1, request.Size ?? 20),
             ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListWarehouseOutboundHistoryRequest(
+    string? OrderNo = null,
+    OutboundOrderStatus? Status = null,
+    DateTime? RequestedFrom = null,
+    DateTime? RequestedTo = null,
+    DateTime? CompletedFrom = null,
+    DateTime? CompletedTo = null,
+    string? ProductNo = null,
+    string? ProductName = null,
+    string? Unit = null,
+    string? RequestedByName = null,
+    string? ConfirmedByName = null,
+    int? Page = null,
+    int? Size = null);

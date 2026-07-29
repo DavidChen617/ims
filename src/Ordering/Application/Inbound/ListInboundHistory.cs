@@ -6,6 +6,7 @@ namespace Application.Inbound;
 
 public sealed record ListInboundHistoryQuery(
     Guid? WarehouseId,
+    string? OrderNo,
     string? ProductNo,
     string? ProductName,
     Guid? RequestedBy,
@@ -13,6 +14,10 @@ public sealed record ListInboundHistoryQuery(
     InboundOrderStatus? Status,
     DateTime? RequestedFrom,
     DateTime? RequestedTo,
+    int? QuantityMin,
+    int? QuantityMax,
+    decimal? UnitPriceMin,
+    decimal? UnitPriceMax,
     decimal? AmountMin,
     decimal? AmountMax,
     int Page,
@@ -20,8 +25,9 @@ public sealed record ListInboundHistoryQuery(
 ) : IQuery<Result<InboundHistoryResultDto>>, ICacheableQuery
 {
     public string CacheKey =>
-        $"inbound-history:{HistoryCacheKey.WarehouseSegment(WarehouseId)}:{ProductNo}:{ProductName}:{RequestedBy}:" +
-        $"{ConfirmedBy}:{Status}:{RequestedFrom:O}:{RequestedTo:O}:{AmountMin}:{AmountMax}:{Page}:{Size}";
+        $"inbound-history:{HistoryCacheKey.WarehouseSegment(WarehouseId)}:{OrderNo}:{ProductNo}:{ProductName}:" +
+        $"{RequestedBy}:{ConfirmedBy}:{Status}:{RequestedFrom:O}:{RequestedTo:O}:{QuantityMin}:{QuantityMax}:" +
+        $"{UnitPriceMin}:{UnitPriceMax}:{AmountMin}:{AmountMax}:{Page}:{Size}";
 
     public TimeSpan CacheTtl => TimeSpan.FromSeconds(60);
 }
@@ -49,6 +55,7 @@ public sealed class ListInboundHistoryQueryHandler(
     {
         return await reader.ListHistoryAsync(
             request.WarehouseId,
+            request.OrderNo,
             request.ProductNo,
             request.ProductName,
             request.RequestedBy,
@@ -56,6 +63,10 @@ public sealed class ListInboundHistoryQueryHandler(
             request.Status,
             request.RequestedFrom,
             request.RequestedTo,
+            request.QuantityMin,
+            request.QuantityMax,
+            request.UnitPriceMin,
+            request.UnitPriceMax,
             request.AmountMin,
             request.AmountMax,
             request.Page,

@@ -1,4 +1,5 @@
 using Api.Extension;
+using Application;
 using Application.Inbound;
 using Davish.Sendr;
 
@@ -11,7 +12,7 @@ public static class ListPendingInboundOrdersEndpoint
         public RouteGroupBuilder MapListPendingInboundOrdersEndpoint()
         {
             inboundV1Group.MapGet("pending", Handle)
-                .Produces<PendingInboundOrdersDto>()
+                .Produces<PagedResult<PendingInboundOrderDto>>()
                 .WithName("ListPendingInboundOrders")
                 .WithSummary("List pending inbound orders")
                 .WithDescription("List inbound orders awaiting review for the current warehouse.")
@@ -23,9 +24,11 @@ public static class ListPendingInboundOrdersEndpoint
 
     private static async Task<IResult> Handle(
         ISender sender,
-        CancellationToken ct)
+        CancellationToken ct,
+        int page = 1,
+        int size = 20)
     {
-        var result = await sender.SendAsync(new ListPendingInboundOrdersQuery(), ct);
+        var result = await sender.SendAsync(new ListPendingInboundOrdersQuery(page, size), ct);
 
         return result.ToOk();
     }

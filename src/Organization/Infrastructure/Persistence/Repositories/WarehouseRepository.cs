@@ -75,4 +75,22 @@ public sealed class WarehouseRepository(IOrganizationUnitOfWork unitOfWork) : IW
 
         return Result.Success<IReadOnlyList<Warehouse>>(warehouses.ToList());
     }
+
+    public async Task<Result<IReadOnlyList<Warehouse>>> ListAsync(string? keyword, CancellationToken ct)
+    {
+        var cmd = new CommandDefinition(
+            """
+            select id, name
+            from warehouse
+            where @Keyword is null or name ilike '%' || @Keyword || '%'
+            """,
+            new { Keyword = keyword },
+            cancellationToken: ct,
+            transaction: unitOfWork.Transaction
+        );
+
+        var warehouses = await unitOfWork.Connection.QueryAsync<Warehouse>(cmd);
+
+        return Result.Success<IReadOnlyList<Warehouse>>(warehouses.ToList());
+    }
 }

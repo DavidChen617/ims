@@ -25,16 +25,28 @@ public static class ListStocksEndpoint
     private static async Task<IResult> Handle(
         ISender sender,
         CancellationToken ct,
-        Guid? warehouseId = null,
-        Guid? productId = null,
-        string? productNo = null,
-        string? productName = null,
-        int page = 1,
-        int size = 20)
+        [AsParameters] ListStocksRequest request)
     {
         var result = await sender.SendAsync(
-            new ListStocksQuery(warehouseId, productId, productNo, productName, page, size), ct);
+            new ListStocksQuery(
+                request.WarehouseId, request.ProductId, request.ProductNo, request.ProductName, request.Unit,
+                request.QuantityMin, request.QuantityMax, request.CumulativeShippedMin, request.CumulativeShippedMax,
+                request.Page ?? 1, request.Size ?? 20),
+            ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListStocksRequest(
+    Guid? WarehouseId = null,
+    Guid? ProductId = null,
+    string? ProductNo = null,
+    string? ProductName = null,
+    string? Unit = null,
+    int? QuantityMin = null,
+    int? QuantityMax = null,
+    int? CumulativeShippedMin = null,
+    int? CumulativeShippedMax = null,
+    int? Page = null,
+    int? Size = null);

@@ -77,4 +77,66 @@ public sealed class UserRepository(IOrganizationUnitOfWork unitOfWork) : IUserRe
 
         return users.ToList().AsReadOnly();
     }
+
+    public async Task<Result<IReadOnlyList<User>>> ListPagedAsync(
+        Guid? warehouseId, string? name, string? username, Role? role, string? warehouseName,
+        DateTime? createdFrom, DateTime? createdTo, int page, int size, CancellationToken ct)
+    {
+        var cmd = new CommandDefinition(
+            """
+            select u.id, u.warehouse_id, u.name, u.username, u.password_hash, u.created_at, u.role
+            from users u
+            left join warehouse w on w.id = u.warehouse_id
+            where (@WarehouseId is null or u.warehouse_id = @WarehouseId)
+              and (@Name is null or u.name ilike '%' || @Name || '%')
+              and (@Username is null or u.username ilike '%' || @Username || '%')
+              and (@Role::smallint is null or u.role = @Role::smallint)
+              and (@WarehouseName is null or w.name ilike '%' || @WarehouseName || '%')
+              and (@CreatedFrom::timestamp is null or u.created_at >= @CreatedFrom::timestamp)
+              and (@CreatedTo::timestamp is null or u.created_at <= @CreatedTo::timestamp)
+            order by u.created_at
+            limit @Size offset @Offset
+            """,
+            new
+            {
+                WarehouseId = warehouseId, Name = name, Username = username, Role = role, WarehouseName = warehouseName,
+                CreatedFrom = createdFrom, CreatedTo = createdTo, Size = size, Offset = (page - 1) * size,
+            },
+            cancellationToken: ct,
+            transaction: unitOfWork.Transaction
+        );
+
+        var users = await unitOfWork.Connection.QueryAsync<User>(cmd);
+
+        return users.ToList().AsReadOnly();
+    }
+
+    public async Task<Result<int>> CountAsync(
+        Guid? warehouseId, string? name, string? username, Role? role, string? warehouseName,
+        DateTime? createdFrom, DateTime? createdTo, CancellationToken ct)
+    {
+        var cmd = new CommandDefinition(
+            """
+            select count(*)::int
+            from users u
+            left join warehouse w on w.id = u.warehouse_id
+            where (@WarehouseId is null or u.warehouse_id = @WarehouseId)
+              and (@Name is null or u.name ilike '%' || @Name || '%')
+              and (@Username is null or u.username ilike '%' || @Username || '%')
+              and (@Role::smallint is null or u.role = @Role::smallint)
+              and (@WarehouseName is null or w.name ilike '%' || @WarehouseName || '%')
+              and (@CreatedFrom::timestamp is null or u.created_at >= @CreatedFrom::timestamp)
+              and (@CreatedTo::timestamp is null or u.created_at <= @CreatedTo::timestamp)
+            """,
+            new
+            {
+                WarehouseId = warehouseId, Name = name, Username = username, Role = role, WarehouseName = warehouseName,
+                CreatedFrom = createdFrom, CreatedTo = createdTo,
+            },
+            cancellationToken: ct,
+            transaction: unitOfWork.Transaction
+        );
+
+        return await unitOfWork.Connection.QuerySingleAsync<int>(cmd);
+    }
 }

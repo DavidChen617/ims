@@ -27,12 +27,30 @@ public sealed class ProductReader(IOrderingUnitOfWork unitOfWork) : IProductRead
             : product;
     }
 
-    public async Task<Result<PagedResult<ProductDto>>> ListAsync(int page, int size, CancellationToken ct)
+    public async Task<Result<PagedResult<ProductDto>>> ListAsync(
+        string? productNo, string? name, string? unit, decimal? priceMin, decimal? priceMax,
+        int page, int size, CancellationToken ct)
     {
+        var filters = new
+        {
+            ProductNo = productNo,
+            Name = name,
+            Unit = unit,
+            PriceMin = priceMin,
+            PriceMax = priceMax,
+        };
+
         var countCmd = new CommandDefinition(
             """
-            select count(*) from products
+            select count(*)
+            from products
+            where (@ProductNo is null or product_no ilike '%' || @ProductNo || '%')
+              and (@Name is null or name ilike '%' || @Name || '%')
+              and (@Unit is null or unit = @Unit)
+              and (@PriceMin::numeric is null or price >= @PriceMin::numeric)
+              and (@PriceMax::numeric is null or price <= @PriceMax::numeric)
             """,
+            filters,
             cancellationToken: ct,
             transaction: unitOfWork.Transaction
         );
@@ -43,10 +61,19 @@ public sealed class ProductReader(IOrderingUnitOfWork unitOfWork) : IProductRead
             """
             select id, product_no, name, unit, price
             from products
+            where (@ProductNo is null or product_no ilike '%' || @ProductNo || '%')
+              and (@Name is null or name ilike '%' || @Name || '%')
+              and (@Unit is null or unit = @Unit)
+              and (@PriceMin::numeric is null or price >= @PriceMin::numeric)
+              and (@PriceMax::numeric is null or price <= @PriceMax::numeric)
             order by product_no
             limit @Size offset @Offset
             """,
-            new { Size = size, Offset = (page - 1) * size },
+            new
+            {
+                filters.ProductNo, filters.Name, filters.Unit, filters.PriceMin, filters.PriceMax,
+                Size = size, Offset = (page - 1) * size,
+            },
             cancellationToken: ct,
             transaction: unitOfWork.Transaction
         );

@@ -185,7 +185,10 @@ public class OutboundOrderMessagingTests(KafkaCustomWebApplicationFactory factor
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
 
         var result = await sender.SendAsync(
-            new ListOutboundHistoryQuery(null, null, null, null, null, null, null, null, null, 1, 50),
+            new ListOutboundHistoryQuery(
+                WarehouseId: null, OrderNo: null, Status: null, RequestedFrom: null, RequestedTo: null,
+                CompletedFrom: null, CompletedTo: null, ProductNo: null, ProductName: null, Unit: null,
+                RequestedByName: null, ConfirmedByName: null, Page: 1, Size: 50),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);

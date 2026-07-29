@@ -46,3 +46,5 @@ public static class ListWarehouseUserEndpoint
         return result.ToOk();
     }
 }
+
+public record UsersDto(IReadOnlyList<UserDto> Items);

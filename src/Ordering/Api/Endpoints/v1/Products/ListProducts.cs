@@ -25,11 +25,23 @@ public static class ListProductsEndpoint
     private static async Task<IResult> Handle(
         ISender sender,
         CancellationToken ct,
-        int page = 1,
-        int size = 20)
+        [AsParameters] ListProductsRequest request)
     {
-        var result = await sender.SendAsync(new ListProductsQuery(page, size), ct);
+        var result = await sender.SendAsync(
+            new ListProductsQuery(
+                request.ProductNo, request.Name, request.Unit, request.PriceMin, request.PriceMax,
+                request.Page ?? 1, request.Size ?? 20),
+            ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListProductsRequest(
+    string? ProductNo = null,
+    string? Name = null,
+    string? Unit = null,
+    decimal? PriceMin = null,
+    decimal? PriceMax = null,
+    int? Page = null,
+    int? Size = null);

@@ -75,27 +75,34 @@ public sealed class InboundOrderReader(IOrderingUnitOfWork unitOfWork) : IInboun
             items);
     }
 
-    public async Task<Result<IReadOnlyList<PendingInboundOrderDto>>> ListPendingAsync(Guid warehouseId, CancellationToken ct)
+    public async Task<Result<PagedResult<PendingInboundOrderDto>>> ListPendingAsync(
+        Guid warehouseId, int page, int size, CancellationToken ct)
     {
         var cmd = new CommandDefinition(
             """
-            select id, order_no
+            select id, order_no, count(*) over()::int as total_count
             from inbound_orders
             where warehouse_id = @WarehouseId and status = @Status
             order by requested_at
+            limit @Size offset @Offset
             """,
-            new { WarehouseId = warehouseId, Status = InboundOrderStatus.Pending },
+            new { WarehouseId = warehouseId, Status = InboundOrderStatus.Pending, Size = size, Offset = (page - 1) * size },
             cancellationToken: ct,
             transaction: unitOfWork.Transaction
         );
 
-        var orders = await unitOfWork.Connection.QueryAsync<PendingInboundOrderDto>(cmd);
+        var rows = (await unitOfWork.Connection.QueryAsync<PendingRow>(cmd)).ToList();
+        var items = rows.Select(r => new PendingInboundOrderDto(r.Id, r.OrderNo)).ToList();
+        var totalCount = rows.Count > 0 ? rows[0].TotalCount : 0;
 
-        return Result.Success<IReadOnlyList<PendingInboundOrderDto>>(orders.ToList());
+        return new PagedResult<PendingInboundOrderDto>(items, totalCount, page, size);
     }
+
+    private sealed record PendingRow(Guid Id, string OrderNo, int TotalCount);
 
     public async Task<Result<InboundHistoryResultDto>> ListHistoryAsync(
         Guid? warehouseId,
+        string? orderNo,
         string? productNo,
         string? productName,
         Guid? requestedBy,
@@ -103,6 +110,10 @@ public sealed class InboundOrderReader(IOrderingUnitOfWork unitOfWork) : IInboun
         InboundOrderStatus? status,
         DateTime? requestedFrom,
         DateTime? requestedTo,
+        int? quantityMin,
+        int? quantityMax,
+        decimal? unitPriceMin,
+        decimal? unitPriceMax,
         decimal? amountMin,
         decimal? amountMax,
         int page,
@@ -127,12 +138,17 @@ public sealed class InboundOrderReader(IOrderingUnitOfWork unitOfWork) : IInboun
             where o.status in (@Confirmed, @Rejected)
               and (@Status::smallint is null or o.status = @Status::smallint)
               and (@WarehouseId::uuid is null or o.warehouse_id = @WarehouseId::uuid)
+              and (@OrderNo is null or o.order_no ilike '%' || @OrderNo || '%')
               and (@RequestedFrom::timestamp is null or o.requested_at >= @RequestedFrom::timestamp)
               and (@RequestedTo::timestamp is null or o.requested_at <= @RequestedTo::timestamp)
               and (@RequestedBy::uuid is null or o.requested_by = @RequestedBy::uuid)
               and (@ConfirmedBy::uuid is null or o.confirmed_by = @ConfirmedBy::uuid)
-              and (@ProductNo is null or p.product_no = @ProductNo)
+              and (@ProductNo is null or p.product_no ilike '%' || @ProductNo || '%')
               and (@ProductName is null or p.name ilike '%' || @ProductName || '%')
+              and (@QuantityMin::int is null or i.quantity >= @QuantityMin::int)
+              and (@QuantityMax::int is null or i.quantity <= @QuantityMax::int)
+              and (@UnitPriceMin::numeric is null or i.unit_price >= @UnitPriceMin::numeric)
+              and (@UnitPriceMax::numeric is null or i.unit_price <= @UnitPriceMax::numeric)
               and (@AmountMin::numeric is null or ot.order_amount >= @AmountMin::numeric)
               and (@AmountMax::numeric is null or ot.order_amount <= @AmountMax::numeric)
             order by o.requested_at desc, i.id
@@ -144,12 +160,17 @@ public sealed class InboundOrderReader(IOrderingUnitOfWork unitOfWork) : IInboun
                 Rejected = InboundOrderStatus.Rejected,
                 Status = status,
                 WarehouseId = warehouseId,
+                OrderNo = orderNo,
                 RequestedFrom = requestedFrom,
                 RequestedTo = requestedTo,
                 RequestedBy = requestedBy,
                 ConfirmedBy = confirmedBy,
                 ProductNo = productNo,
                 ProductName = productName,
+                QuantityMin = quantityMin,
+                QuantityMax = quantityMax,
+                UnitPriceMin = unitPriceMin,
+                UnitPriceMax = unitPriceMax,
                 AmountMin = amountMin,
                 AmountMax = amountMax,
                 Size = size,
@@ -260,7 +281,6 @@ public sealed class InboundOrderReader(IOrderingUnitOfWork unitOfWork) : IInboun
         return Result.Success<IReadOnlyList<InboundOrderHistoryDto>>(history.ToList());
     }
 
-    // Status 故意存 short,理由跟下面 OrderRow 一樣。
     private sealed record OrderHistoryRow(
         Guid Id,
         string OrderNo,
@@ -286,10 +306,6 @@ public sealed class InboundOrderReader(IOrderingUnitOfWork unitOfWork) : IInboun
         int TotalQuantity,
         decimal TotalAmount);
 
-    // Status 故意存 short(對應 DB 的 smallint),不是 InboundOrderStatus enum ——
-    // record 沒有無參數建構子,Dapper 不管是單一型別還是 multi-map 查詢,都只能走
-    // 建構子完全比對的路徑(不是屬性 setter 賦值那條會自動做數字轉 enum 的路),
-    // 型別對不上就直接丟 InvalidOperationException。
     private sealed record OrderRow(
         Guid Id,
         string OrderNo,

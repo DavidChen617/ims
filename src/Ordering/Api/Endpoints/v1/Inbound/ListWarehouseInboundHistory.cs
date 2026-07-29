@@ -1,5 +1,4 @@
 using Api.Extension;
-using Application;
 using Application.Inbound;
 using Davish.Sendr;
 using Domain.InboundOrders;
@@ -30,24 +29,34 @@ public static class ListWarehouseInboundHistoryEndpoint
         ISender sender,
         ICurrentUser currentUser,
         CancellationToken ct,
-        string? productNo = null,
-        string? productName = null,
-        Guid? requestedBy = null,
-        Guid? confirmedBy = null,
-        InboundOrderStatus? status = null,
-        DateTime? requestedFrom = null,
-        DateTime? requestedTo = null,
-        decimal? amountMin = null,
-        decimal? amountMax = null,
-        int page = 1,
-        int size = 20)
+        [AsParameters] ListWarehouseInboundHistoryRequest request)
     {
         var result = await sender.SendAsync(
             new ListInboundHistoryQuery(
-                currentUser.WarehouseId, productNo, productName, requestedBy, confirmedBy, status,
-                requestedFrom, requestedTo, amountMin, amountMax, page, size),
+                currentUser.WarehouseId, request.OrderNo, request.ProductNo, request.ProductName, request.RequestedBy,
+                request.ConfirmedBy, request.Status, request.RequestedFrom, request.RequestedTo,
+                request.QuantityMin, request.QuantityMax, request.UnitPriceMin, request.UnitPriceMax,
+                request.AmountMin, request.AmountMax, request.Page ?? 1, request.Size ?? 20),
             ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListWarehouseInboundHistoryRequest(
+    string? OrderNo = null,
+    string? ProductNo = null,
+    string? ProductName = null,
+    Guid? RequestedBy = null,
+    Guid? ConfirmedBy = null,
+    InboundOrderStatus? Status = null,
+    DateTime? RequestedFrom = null,
+    DateTime? RequestedTo = null,
+    int? QuantityMin = null,
+    int? QuantityMax = null,
+    decimal? UnitPriceMin = null,
+    decimal? UnitPriceMax = null,
+    decimal? AmountMin = null,
+    decimal? AmountMax = null,
+    int? Page = null,
+    int? Size = null);

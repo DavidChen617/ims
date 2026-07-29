@@ -27,25 +27,35 @@ public static class ListInboundHistoryEndpoint
     private static async Task<IResult> Handle(
         ISender sender,
         CancellationToken ct,
-        Guid? warehouseId = null,
-        string? productNo = null,
-        string? productName = null,
-        Guid? requestedBy = null,
-        Guid? confirmedBy = null,
-        InboundOrderStatus? status = null,
-        DateTime? requestedFrom = null,
-        DateTime? requestedTo = null,
-        decimal? amountMin = null,
-        decimal? amountMax = null,
-        int page = 1,
-        int size = 20)
+        [AsParameters] ListInboundHistoryRequest request)
     {
         var result = await sender.SendAsync(
             new ListInboundHistoryQuery(
-                warehouseId, productNo, productName, requestedBy, confirmedBy, status,
-                requestedFrom, requestedTo, amountMin, amountMax, page, size),
+                request.WarehouseId, request.OrderNo, request.ProductNo, request.ProductName, request.RequestedBy,
+                request.ConfirmedBy, request.Status, request.RequestedFrom, request.RequestedTo,
+                request.QuantityMin, request.QuantityMax, request.UnitPriceMin, request.UnitPriceMax,
+                request.AmountMin, request.AmountMax, request.Page ?? 1, request.Size ?? 20),
             ct);
 
         return result.ToOk();
     }
 }
+
+public sealed record ListInboundHistoryRequest(
+    Guid? WarehouseId = null,
+    string? OrderNo = null,
+    string? ProductNo = null,
+    string? ProductName = null,
+    Guid? RequestedBy = null,
+    Guid? ConfirmedBy = null,
+    InboundOrderStatus? Status = null,
+    DateTime? RequestedFrom = null,
+    DateTime? RequestedTo = null,
+    int? QuantityMin = null,
+    int? QuantityMax = null,
+    decimal? UnitPriceMin = null,
+    decimal? UnitPriceMax = null,
+    decimal? AmountMin = null,
+    decimal? AmountMax = null,
+    int? Page = null,
+    int? Size = null);
