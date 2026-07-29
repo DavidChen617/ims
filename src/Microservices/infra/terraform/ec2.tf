@@ -4,6 +4,7 @@ resource "aws_instance" "control_plane" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.cluster.id]
   key_name               = var.key_name
+  source_dest_check = false
 
   root_block_device {
     volume_size = 30
@@ -60,6 +61,10 @@ resource "aws_instance" "worker" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.cluster.id]
   key_name               = var.key_name
+  # Calico 同一個 subnet 內預設用 CrossSubnet 模式,不會封裝 pod-to-pod 封包,
+  # 這種封包的來源/目的地 IP 是 pod CIDR、跟這台實例自己的 ENI IP 對不上,
+  # AWS 預設會用 source/dest check 把它們丟掉,一定要關掉。
+  source_dest_check = false
 
   root_block_device {
     volume_size = 40
