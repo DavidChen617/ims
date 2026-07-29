@@ -1,7 +1,6 @@
 using Dapper;
 using Davish.Result;
 using Domain.Stocks;
-using Infrastructure.Persistence;
 
 namespace Infrastructure.Persistence.Repositories;
 
