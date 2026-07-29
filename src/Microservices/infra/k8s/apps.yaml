@@ -387,6 +387,25 @@ spec:
           operator: Equal
           value: ingress
           effect: NoSchedule
+      initContainers:
+        - name: wait-organization
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until wget -qO- http://organization:8080/healthz >/dev/null; do sleep 2; done
+        - name: wait-ordering
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until wget -qO- http://ordering:8080/healthz >/dev/null; do sleep 2; done
+        - name: wait-inventory
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until wget -qO- http://inventory:8080/healthz >/dev/null; do sleep 2; done
       containers:
         - name: nginx
           image: ims/web:latest
