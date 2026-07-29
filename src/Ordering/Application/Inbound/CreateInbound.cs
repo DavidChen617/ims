@@ -40,7 +40,7 @@ public sealed class CreateInboundCommandHandler(
         }
 
         var items = request.Items
-            .Select(item => (item.ProductId, item.Quantity, item.UnitPrice ?? products[item.ProductId].Price))
+            .Select(item => (item.ProductId, item.Quantity, item.UnitPrice ?? products[item.ProductId].Price.Value))
             .ToList();
 
         return await InboundOrder

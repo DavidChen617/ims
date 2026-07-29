@@ -17,7 +17,7 @@ public class ProductTests
         Assert.Equal("P-001", product.ProductNo);
         Assert.Equal("Widget", product.Name);
         Assert.Equal(unit, product.Unit);
-        Assert.Equal(9.99m, product.Price);
+        Assert.Equal(9.99m, product.Price.Value);
     }
 }
 

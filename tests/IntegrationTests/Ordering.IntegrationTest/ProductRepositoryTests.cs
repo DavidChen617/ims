@@ -31,7 +31,7 @@ public class ProductRepositoryTests(CustomWebApplicationFactory factory) : IClas
             Assert.Equal(productNo, found.Value.ProductNo);
             Assert.Equal("Test Product", found.Value.Name);
             Assert.Equal(unitName, found.Value.Unit.Name);
-            Assert.Equal(12.5m, found.Value.Price);
+            Assert.Equal(12.5m, found.Value.Price.Value);
         }
         finally
         {

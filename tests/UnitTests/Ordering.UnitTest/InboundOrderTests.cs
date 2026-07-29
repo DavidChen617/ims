@@ -26,7 +26,7 @@ public class InboundOrderTests
         Assert.Single(order.Items);
         Assert.Equal(ProductId, order.Items[0].ProductId);
         Assert.Equal(10, order.Items[0].Quantity);
-        Assert.Equal(5.5m, order.Items[0].UnitPrice);
+        Assert.Equal(5.5m, order.Items[0].UnitPrice.Value);
 
         var raised = Assert.Single(order.DomainEvents);
         var createdEvent = Assert.IsType<InboundOrderCreatedDomainEvent>(raised);
