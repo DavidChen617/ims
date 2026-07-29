@@ -4,6 +4,7 @@ using Confluent.Kafka;
 using Infrastructure.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Telemetry;
 
@@ -12,7 +13,8 @@ namespace Infrastructure.Outbox;
 public sealed class OutboxProcessor(
     IServiceScopeFactory factory,
     IProducer<string, string> producer,
-    IOptions<KafkaTopicOptions> topicOptions
+    IOptions<KafkaTopicOptions> topicOptions,
+    ILogger<OutboxProcessor> logger
 ) : BackgroundService
 {
     private const int BatchSize = 50;
@@ -57,6 +59,7 @@ public sealed class OutboxProcessor(
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    activity?.AddException(ex);
                     message.SetError(ex.Message);
 
                     // Polly 那 3 次重試是每一次 poll 內的重試;這裡的 MaxPollRetries 是跨 poll
@@ -68,6 +71,10 @@ public sealed class OutboxProcessor(
                         {
                             await PublishToDeadLetterAsync(message, ex, stoppingToken);
                             message.MarkDeadLettered();
+
+                            logger.LogError(ex,
+                                "Outbox message {MessageId} ({EventType}) failed after {RetryCount} retries, moved to dead letter queue",
+                                message.Id, message.EventType, message.RetryCount);
                         }
                         catch (Exception dlqEx) when (dlqEx is not OperationCanceledException)
                         {
@@ -75,6 +82,11 @@ public sealed class OutboxProcessor(
                             // 特有的問題)—— 不標記 DeadLetteredAt,讓它下一輪繼續重試整套流程,
                             // 而不是讓這個例外往外炸、把整個 BackgroundService/host 弄掛。
                             activity?.SetStatus(ActivityStatusCode.Error, dlqEx.Message);
+                            activity?.AddException(dlqEx);
+
+                            logger.LogCritical(dlqEx,
+                                "Outbox message {MessageId} ({EventType}) failed to publish to dead letter queue as well, will retry entire flow next cycle",
+                                message.Id, message.EventType);
                         }
                     }
                 }

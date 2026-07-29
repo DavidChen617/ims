@@ -111,6 +111,12 @@ public sealed class IntegrationEventConsumer(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddException(ex);
+
+            logger.LogError(ex,
+                "Failed to process message from {Topic}, sending to dead letter queue. EventType={EventType}",
+                result.Topic, Encoding.UTF8.GetString(eventTypeBytes));
+
             await PublishToDeadLetterAsync(result, ex, ct);
         }
     }
