@@ -1,6 +1,6 @@
 #!/bin/sh
 
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.cs$')
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.cs$' | sed -n 's#^src/Microservices/##p')
 
 if [ -z "$STAGED_FILES" ]; then
   exit 0
@@ -11,10 +11,10 @@ for FILE in $STAGED_FILES; do
   INCLUDE_ARGS="$INCLUDE_ARGS --include $FILE"
 done
 
-dotnet format $INCLUDE_ARGS
+(cd src/Microservices && dotnet format Microservices.slnx $INCLUDE_ARGS)
 
 for FILE in $STAGED_FILES; do
-  git add "$FILE"
+  git add "src/Microservices/$FILE"
 done
 
 echo "Format check passed."
