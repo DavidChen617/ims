@@ -27,6 +27,18 @@ public sealed class InboundOrder : AggregateRoot
         string requestedByName,
         IReadOnlyList<(Guid ProductId, int Quantity, decimal UnitPrice)> items)
     {
+        var orderItems = new List<InboundOrderItem>();
+
+        foreach (var item in items)
+        {
+            var unitPriceResult = UnitPrice.Create(item.UnitPrice);
+
+            if (!unitPriceResult.IsSuccess)
+                return unitPriceResult.Error;
+
+            orderItems.Add(new InboundOrderItem(item.ProductId, item.Quantity, unitPriceResult.Value));
+        }
+
         var order = new InboundOrder
         {
             Id = Guid.CreateVersion7(),
@@ -38,8 +50,7 @@ public sealed class InboundOrder : AggregateRoot
             RequestedAt = DateTime.UtcNow
         };
 
-        order._items.AddRange(items.Select(item =>
-            new InboundOrderItem(item.ProductId, item.Quantity, item.UnitPrice)));
+        order._items.AddRange(orderItems);
 
         order.RaiseDomainEvent(new InboundOrderCreatedDomainEvent(
             order.Id,
@@ -88,23 +99,5 @@ public sealed class InboundOrder : AggregateRoot
     public void AttachItems(IEnumerable<InboundOrderItem> items)
     {
         _items.AddRange(items);
-    }
-}
-
-public sealed class InboundOrderItem : Entity<int>
-{
-    public Guid ProductId { get; private set; }
-    public int Quantity { get; private set; }
-    public decimal UnitPrice { get; private set; }
-
-    private InboundOrderItem()
-    {
-    }
-
-    internal InboundOrderItem(Guid productId, int quantity, decimal unitPrice)
-    {
-        ProductId = productId;
-        Quantity = quantity;
-        UnitPrice = unitPrice;
     }
 }

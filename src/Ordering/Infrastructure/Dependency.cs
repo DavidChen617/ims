@@ -34,6 +34,7 @@ public static class Dependency
         {
             DefaultTypeMap.MatchNamesWithUnderscores = true;
             SqlMapper.AddTypeHandler(new ProductUnitTypeHandler());
+            SqlMapper.AddTypeHandler(new UnitPriceTypeHandler());
 
             services
                 .AddScoped<IOrderingUnitOfWork, OrderingUnitOfWork>()
