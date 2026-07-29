@@ -31,6 +31,9 @@ public sealed class InboundOrder : AggregateRoot
 
         foreach (var item in items)
         {
+            if (item.Quantity <= 0)
+                return new Error("InboundOrder.Create", "Quantity must be positive");
+
             var unitPriceResult = UnitPrice.Create(item.UnitPrice);
 
             if (!unitPriceResult.IsSuccess)

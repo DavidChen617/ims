@@ -27,6 +27,9 @@ public sealed class OutboundOrder : AggregateRoot
         string requestedByName,
         IReadOnlyList<(Guid ProductId, int Quantity)> items)
     {
+        if (items.Any(item => item.Quantity <= 0))
+            return new Error("OutboundOrder.Create", "Quantity must be positive");
+
         var order = new OutboundOrder
         {
             Id = Guid.CreateVersion7(),
