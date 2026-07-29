@@ -111,19 +111,3 @@ public sealed class OutboundOrder : AggregateRoot
         _items.AddRange(items);
     }
 }
-
-public sealed class OutboundOrderItem : Entity<int>
-{
-    public Guid ProductId { get; private set; }
-    public int Quantity { get; private set; }
-
-    private OutboundOrderItem()
-    {
-    }
-
-    internal OutboundOrderItem(Guid productId, int quantity)
-    {
-        ProductId = productId;
-        Quantity = quantity;
-    }
-}
