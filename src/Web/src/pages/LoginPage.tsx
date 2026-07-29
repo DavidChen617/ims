@@ -21,9 +21,6 @@ export function LoginPage({ onLogin }: { onLogin: (token: string, refreshToken: 
             IMS Warehouse Console
           </div>
           <h1 className="max-w-xl text-4xl font-semibold tracking-tight text-slate-950">倉儲後台工作台</h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-            前端透過 nginx prefix 呼叫 Organization、Ordering、Inventory 三組 API；本機 Vite dev server 已先配置對應 proxy。
-          </p>
         </div>
 
         <form
