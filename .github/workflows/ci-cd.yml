@@ -1,0 +1,126 @@
+name: CI/CD
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Microservices
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "11.0.x"
+          dotnet-quality: preview
+
+      - run: dotnet restore Microservices.slnx
+      - run: dotnet build Microservices.slnx --configuration Release --no-restore
+      - run: dotnet test Microservices.slnx --configuration Release --no-build
+
+  build-and-push-image:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Microservices
+    strategy:
+      matrix:
+        include:
+          - name: organization
+            dockerfile: src/Microservices/src/Organization/Dockerfile
+            image: ims-organization
+          - name: ordering
+            dockerfile: src/Microservices/src/Ordering/Dockerfile
+            image: ims-ordering
+          - name: inventory
+            dockerfile: src/Microservices/src/Inventory/Dockerfile
+            image: ims-inventory
+          - name: web
+            dockerfile: src/Microservices/src/Web/Dockerfile
+            image: ims-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 寫入 organization 的 RSA 私鑰(只有 build organization image 這個矩陣項目需要)
+        if: matrix.name == 'organization'
+        run: echo "${{ secrets.ORG_RSA_PRIVATE_KEY }}" > src/Organization/Api/org-private.pem
+
+      - name: 算出小寫的 GHCR namespace(GHCR 不吃大寫)
+        id: owner
+        run: echo "lowercase=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: src/Microservices
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}:latest
+            ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}:${{ github.ref_name }}
+
+  deploy:
+    needs: build-and-push-image
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            src/Microservices/infra/k8s
+
+      - name: 算出小寫的 GHCR namespace
+        id: owner
+        run: echo "lowercase=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: 準備 .env
+        run: cp ~/k8s/.env src/Microservices/infra/k8s/.env
+
+      - name: 把 image tag 指到這次建好的版本
+        working-directory: src/Microservices/infra/k8s
+        run: |
+          set -euo pipefail
+          OWNER="${{ steps.owner.outputs.lowercase }}"
+          TAG="${{ github.ref_name }}"
+          kustomize edit set image \
+            ims/organization=ghcr.io/${OWNER}/ims-organization:${TAG} \
+            ims/ordering=ghcr.io/${OWNER}/ims-ordering:${TAG} \
+            ims/inventory=ghcr.io/${OWNER}/ims-inventory:${TAG} \
+            ims/web=ghcr.io/${OWNER}/ims-web:${TAG}
+
+      - name: 刪舊的 migration Job(Job 是 immutable,同名不能重新 apply)
+        run: kubectl -n ims delete job organization-migrate ordering-migrate inventory-migrate --ignore-not-found
+
+      - name: apply
+        run: kubectl apply -k src/Microservices/infra/k8s
+
+      - name: 等 migration 跑完
+        run: |
+          kubectl -n ims wait --for=condition=complete --timeout=180s \
+            job/organization-migrate job/ordering-migrate job/inventory-migrate
+
+      - name: 確認 app rollout 完成
+        run: |
+          set -euo pipefail
+          for d in organization ordering inventory nginx; do
+            kubectl -n ims rollout status deployment/"$d"
+          done
