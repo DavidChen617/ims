@@ -10,4 +10,7 @@ public sealed class KafkaTopicOptions
 
     // 發布端 —— 這個服務自己發出的訊息流(Ordering 會消費回去)。
     public string Inventory { get; set; } = string.Empty;
+
+    // 給這個服務自己的 OutboxProcessor 用 —— 永久失敗的訊息放棄重試後發到這裡。
+    public string InventoryDeadLetter { get; set; } = string.Empty;
 }

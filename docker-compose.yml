@@ -148,6 +148,7 @@ services:
       JwtSetting__Audience: "${JWT_AUDIENCE}"
       Kafka__BootstrapServers: "${KAFKA_BOOTSTRAP_SERVERS}"
       Kafka__Topics__Ordering: "${KAFKA_ORDERING_TOPIC}"
+      Kafka__Topics__OrderingDeadLetter: "${KAFKA_ORDERING_DEAD_LETTER_TOPIC}"
       Kafka__Topics__Inventory: "${KAFKA_INVENTORY_TOPIC}"
       Kafka__Topics__InventoryDeadLetter: "${KAFKA_INVENTORY_DEAD_LETTER_TOPIC}"
       Otel__OtlpEndpoint: "${OTEL_OTLP_ENDPOINT}"
@@ -178,6 +179,7 @@ services:
       Kafka__Topics__Ordering: "${KAFKA_ORDERING_TOPIC}"
       Kafka__Topics__OrderingDeadLetter: "${KAFKA_ORDERING_DEAD_LETTER_TOPIC}"
       Kafka__Topics__Inventory: "${KAFKA_INVENTORY_TOPIC}"
+      Kafka__Topics__InventoryDeadLetter: "${KAFKA_INVENTORY_DEAD_LETTER_TOPIC}"
       Otel__OtlpEndpoint: "${OTEL_OTLP_ENDPOINT}"
     ports:
       - "5205:8080"

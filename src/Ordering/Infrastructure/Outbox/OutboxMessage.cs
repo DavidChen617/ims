@@ -8,6 +8,8 @@ public sealed class OutboxMessage
     public DateTime OccurredOn { get; private set; }
     public DateTime? ProcessedOn { get; private set; }
     public string? Error { get; set; }
+    public int RetryCount { get; private set; }
+    public DateTime? DeadLetteredAt { get; private set; }
 
     public static OutboxMessage Create(Guid id, string eventType, string payload)
     {
@@ -30,5 +32,11 @@ public sealed class OutboxMessage
     public void SetError(string error)
     {
         Error = error;
+        RetryCount++;
+    }
+
+    public void MarkDeadLettered()
+    {
+        DeadLetteredAt = DateTime.UtcNow;
     }
 }

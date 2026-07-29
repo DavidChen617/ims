@@ -34,9 +34,9 @@ public class OutboxStore(IOrderingUnitOfWork unitOfWork) : IOutboxStore
     {
         var cmd = new CommandDefinition(
             """
-            select id, event_type, payload, occurred_on, processed_on, error
+            select id, event_type, payload, occurred_on, processed_on, error, retry_count, dead_lettered_at
             from outbox_messages
-            where processed_on is null
+            where processed_on is null and dead_lettered_at is null
             order by occurred_on
             limit @batch
             """,
@@ -55,7 +55,7 @@ public class OutboxStore(IOrderingUnitOfWork unitOfWork) : IOutboxStore
         var cmd = new CommandDefinition(
             """
             update outbox_messages
-            set processed_on = @ProcessedOn, error = @Error
+            set processed_on = @ProcessedOn, error = @Error, retry_count = @RetryCount, dead_lettered_at = @DeadLetteredAt
             where id = @Id
             """,
             message,
