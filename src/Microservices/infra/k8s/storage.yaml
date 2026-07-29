@@ -1,0 +1,59 @@
+# kubeadm 沒有內建 StorageClass。用最簡單的 local PV 靜態綁定,不裝 CSI driver/provisioner。
+# 資料綁在指定的 node 本地磁碟上,node 掛了資料就沒了——先求簡單,之後真的要耐用性
+# 再換 aws-ebs-csi-driver。
+#
+# 用前記得在對應的 worker 上手動建目錄(local PV 不會自動建目錄):
+#   ims-worker-1: sudo mkdir -p /mnt/data/postgres && sudo chmod 777 /mnt/data/postgres
+#   ims-worker-2: sudo mkdir -p /mnt/data/kafka    && sudo chmod 777 /mnt/data/kafka
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /mnt/data/postgres
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - ims-worker-1
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /mnt/data/kafka
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - ims-worker-2

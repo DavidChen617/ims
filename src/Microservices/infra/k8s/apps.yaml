@@ -1,0 +1,420 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: organization
+  namespace: ims
+spec:
+  selector:
+    app: organization
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: organization
+  namespace: ims
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: organization
+  template:
+    metadata:
+      labels:
+        app: organization
+    spec:
+      initContainers:
+        - name: wait-schema
+          image: postgres:18
+          envFrom:
+            - secretRef:
+                name: ims-env
+          command:
+            - sh
+            - -c
+            - until PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U "$POSTGRES_USER" -d organization_db -c "select 1 from refresh_token limit 1;" >/dev/null 2>&1; do sleep 2; done
+      containers:
+        - name: organization
+          image: ims/organization:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: ims-env
+            - secretRef:
+                name: ims-env
+          env:
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ORGANIZATION_CONNECTION_STRING
+            - name: JwtSetting__Issuer
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ORGANIZATION_JWT_ISSUER
+            - name: JwtSetting__Audience
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: JWT_AUDIENCE
+            - name: JwtSetting__RefreshTokenExpiresInDay
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ORGANIZATION_JWT_REFRESH_TOKEN_EXPIRES_IN_DAY
+            - name: JwtSetting__AccessTokenExpiresInMinuets
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ORGANIZATION_JWT_ACCESS_TOKEN_EXPIRES_IN_MINUETS
+            - name: Admin__Password
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ADMIN_PASSWORD
+            - name: RSA_PEM_PATH
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: RSA_PEM_PATH
+            - name: Otel__OtlpEndpoint
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: OTEL_OTLP_ENDPOINT
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ordering
+  namespace: ims
+spec:
+  selector:
+    app: ordering
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ordering
+  namespace: ims
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ordering
+  template:
+    metadata:
+      labels:
+        app: ordering
+    spec:
+      initContainers:
+        - name: wait-schema
+          image: postgres:18
+          envFrom:
+            - secretRef:
+                name: ims-env
+          command:
+            - sh
+            - -c
+            - until PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U "$POSTGRES_USER" -d ordering_db -c "select 1 from outbox_messages limit 1;" >/dev/null 2>&1; do sleep 2; done
+        - name: wait-kafka
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z kafka 9092; do sleep 2; done
+        - name: wait-redis
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z redis 6379; do sleep 2; done
+        - name: wait-organization
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until wget -qO- http://organization:8080/healthz >/dev/null; do sleep 2; done
+      containers:
+        - name: ordering
+          image: ims/ordering:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ORDERING_CONNECTION_STRING
+            - name: JwtSetting__Authority
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: JWT_AUTHORITY
+            - name: JwtSetting__Audience
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: JWT_AUDIENCE
+            - name: Kafka__BootstrapServers
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: Kafka__Topics__Ordering
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_ORDERING_TOPIC
+            - name: Kafka__Topics__OrderingDeadLetter
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_ORDERING_DEAD_LETTER_TOPIC
+            - name: Kafka__Topics__Inventory
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_INVENTORY_TOPIC
+            - name: Kafka__Topics__InventoryDeadLetter
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_INVENTORY_DEAD_LETTER_TOPIC
+            - name: Otel__OtlpEndpoint
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: OTEL_OTLP_ENDPOINT
+            - name: Redis__ConnectionString
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: REDIS_CONNECTION_STRING
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory
+  namespace: ims
+spec:
+  selector:
+    app: inventory
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  namespace: ims
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory
+  template:
+    metadata:
+      labels:
+        app: inventory
+    spec:
+      initContainers:
+        - name: wait-schema
+          image: postgres:18
+          envFrom:
+            - secretRef:
+                name: ims-env
+          command:
+            - sh
+            - -c
+            - until PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U "$POSTGRES_USER" -d inventory_db -c "select 1 from stocks limit 1;" >/dev/null 2>&1; do sleep 2; done
+        - name: wait-kafka
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z kafka 9092; do sleep 2; done
+        - name: wait-organization
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until wget -qO- http://organization:8080/healthz >/dev/null; do sleep 2; done
+      containers:
+        - name: inventory
+          image: ims/inventory:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: INVENTORY_CONNECTION_STRING
+            - name: JwtSetting__Authority
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: JWT_AUTHORITY
+            - name: JwtSetting__Audience
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: JWT_AUDIENCE
+            - name: Kafka__BootstrapServers
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: Kafka__Topics__Ordering
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_ORDERING_TOPIC
+            - name: Kafka__Topics__OrderingDeadLetter
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_ORDERING_DEAD_LETTER_TOPIC
+            - name: Kafka__Topics__Inventory
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_INVENTORY_TOPIC
+            - name: Kafka__Topics__InventoryDeadLetter
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: KAFKA_INVENTORY_DEAD_LETTER_TOPIC
+            - name: Otel__OtlpEndpoint
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: OTEL_OTLP_ENDPOINT
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: ims
+spec:
+  selector:
+    app: nginx
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: ims
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      nodeSelector:
+        ims-role: ingress
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ingress
+          effect: NoSchedule
+      containers:
+        - name: nginx
+          image: ims/web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              hostPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              hostPort: 443
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: certbot-webroot
+              mountPath: /var/www/certbot
+            - name: letsencrypt
+              mountPath: /etc/letsencrypt
+              readOnly: true
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+        - name: certbot-webroot
+          hostPath:
+            path: /var/www/certbot
+            type: DirectoryOrCreate
+        - name: letsencrypt
+          hostPath:
+            path: /etc/letsencrypt
+            type: DirectoryOrCreate

@@ -1,0 +1,62 @@
+# 第一次核發憑證用,不放進 kustomization,手動跑一次:
+#   kubectl apply -f infra/k8s/certbot-init-job.yaml
+#   kubectl -n ims logs -f job/certbot-init
+#   kubectl -n ims rollout restart deployment/nginx   # 憑證核發完成後讓 nginx 讀到新檔案
+#   kubectl delete job/certbot-init -n ims            # 跑完可以刪掉
+#
+# 跑之前 edge node 上要先有一份自簽憑證佔位,不然 nginx 443 server block 起不來:
+#   sudo mkdir -p /etc/letsencrypt/live/ims-edge
+#   sudo openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+#     -keyout /etc/letsencrypt/live/ims-edge/privkey.pem \
+#     -out /etc/letsencrypt/live/ims-edge/fullchain.pem \
+#     -subj "/CN=localhost"
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: certbot-init
+  namespace: ims
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        ims-role: ingress
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ingress
+          effect: NoSchedule
+      containers:
+        - name: certbot
+          # 同 certbot-renew.yaml:用前先確認 Docker Hub 上最新的 arm64v8-* tag。
+          image: certbot/certbot:arm64v8-v3.1.0
+          envFrom:
+            - secretRef:
+                name: ims-env
+          command:
+            - sh
+            - -c
+            - |
+              rm -rf /etc/letsencrypt/live/ims-edge \
+                     /etc/letsencrypt/archive/ims-edge \
+                     /etc/letsencrypt/renewal/ims-edge.conf
+              certbot certonly --webroot -w /webroot \
+                -d "$EDGE_PUBLIC_DNS" \
+                --email "$LETSENCRYPT_EMAIL" \
+                --agree-tos --non-interactive \
+                --cert-name ims-edge
+          volumeMounts:
+            - name: certbot-webroot
+              mountPath: /webroot
+            - name: letsencrypt
+              mountPath: /etc/letsencrypt
+      volumes:
+        - name: certbot-webroot
+          hostPath:
+            path: /var/www/certbot
+            type: DirectoryOrCreate
+        - name: letsencrypt
+          hostPath:
+            path: /etc/letsencrypt
+            type: DirectoryOrCreate

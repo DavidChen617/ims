@@ -1,0 +1,128 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: organization-migrate
+  namespace: ims
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-postgres
+          image: postgres:18
+          envFrom:
+            - secretRef:
+                name: ims-env
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres -U "$POSTGRES_USER"; do sleep 2; done
+      containers:
+        - name: migrate
+          image: migrate/migrate:v4.19.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ORGANIZATION_MIGRATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ORGANIZATION_MIGRATION_DATABASE_URL
+          args:
+            - -path=/migrations
+            - -database=$(ORGANIZATION_MIGRATION_DATABASE_URL)
+            - up
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+      volumes:
+        - name: migrations
+          configMap:
+            name: organization-migrations
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ordering-migrate
+  namespace: ims
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-postgres
+          image: postgres:18
+          envFrom:
+            - secretRef:
+                name: ims-env
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres -U "$POSTGRES_USER"; do sleep 2; done
+      containers:
+        - name: migrate
+          image: migrate/migrate:v4.19.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ORDERING_MIGRATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: ORDERING_MIGRATION_DATABASE_URL
+          args:
+            - -path=/migrations
+            - -database=$(ORDERING_MIGRATION_DATABASE_URL)
+            - up
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+      volumes:
+        - name: migrations
+          configMap:
+            name: ordering-migrations
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: inventory-migrate
+  namespace: ims
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-postgres
+          image: postgres:18
+          envFrom:
+            - secretRef:
+                name: ims-env
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres -U "$POSTGRES_USER"; do sleep 2; done
+      containers:
+        - name: migrate
+          image: migrate/migrate:v4.19.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: INVENTORY_MIGRATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ims-env
+                  key: INVENTORY_MIGRATION_DATABASE_URL
+          args:
+            - -path=/migrations
+            - -database=$(INVENTORY_MIGRATION_DATABASE_URL)
+            - up
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+      volumes:
+        - name: migrations
+          configMap:
+            name: inventory-migrations

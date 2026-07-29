@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: ims
+data:
+  init-databases.sql: |
+    CREATE DATABASE organization_db;
+    CREATE DATABASE ordering_db;
+    CREATE DATABASE inventory_db;
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: ims
+data:
+  default.conf: |
+    server {
+        listen 80;
+
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    server {
+        listen 443 ssl;
+
+        ssl_certificate     /etc/letsencrypt/live/ims-edge/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/ims-edge/privkey.pem;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location /api/organization/ {
+            proxy_pass http://organization:8080/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location /api/ordering/ {
+            proxy_pass http://ordering:8080/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location /api/inventory/ {
+            proxy_pass http://inventory:8080/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
