@@ -368,6 +368,10 @@ metadata:
   namespace: ims
 spec:
   replicas: 1
+  # 用 hostPort 又只能排到 edge 這一台,新舊 pod 沒辦法同時存在搶同一個 port,
+  # RollingUpdate 預設「先生新的再刪舊的」在這裡會直接卡死,只能先刪舊的再建新的。
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: nginx
