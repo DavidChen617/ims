@@ -33,6 +33,7 @@ resource "aws_instance" "edge" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.cluster.id, aws_security_group.edge_public.id]
   key_name               = var.key_name
+  source_dest_check      = false
 
   root_block_device {
     volume_size = 30
