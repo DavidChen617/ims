@@ -109,10 +109,10 @@ public class OutboundOrderMessagingTests(KafkaCustomWebApplicationFactory factor
         Assert.True(deadLettered.Message.Headers.TryGetLastBytes("FailedAt", out _));
     }
 
-    // 驗證 CachingDecorator 真的會發生「cache hit」時不會爆炸 —— Result<TValue> 的建構子
-    // 是 internal,一開始的實作直接快取整個 Result<TValue>,cache hit 反序列化時
-    // 一定會丟 NotSupportedException。連續呼叫兩次同一個查詢、中間不做任何會讓快取
-    // 失效的操作,第二次一定會是 cache hit,藉此逼出這條路徑。
+    // 驗證 ListOutboundHistoryQueryHandler 的快取邏輯真的會發生「cache hit」時不會爆炸 ——
+    // Result<TValue> 的建構子是 internal,一開始的實作直接快取整個 Result<TValue>,
+    // cache hit 反序列化時一定會丟 NotSupportedException。連續呼叫兩次同一個查詢、
+    // 中間不做任何會讓快取失效的操作,第二次一定會是 cache hit,藉此逼出這條路徑。
     [Fact]
     public async Task GivenSameHistoryQueryTwice_WhenSecondCallHitsCache_ThenDeserializesWithoutThrowing()
     {

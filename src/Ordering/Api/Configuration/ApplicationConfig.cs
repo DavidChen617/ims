@@ -29,9 +29,9 @@ public static class ApplicationConfig
                 .AddRequestHandler<ListPendingInboundOrdersQuery, Result<PagedResult<PendingInboundOrderDto>>,
                     ListPendingInboundOrdersQueryHandler>()
                 .AddRequestHandler<ListInboundHistoryQuery, Result<InboundHistoryResultDto>,
-                    ListInboundHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())
+                    ListInboundHistoryQueryHandler>()
                 .AddRequestHandler<ListInboundOrderHistoryQuery, Result<InboundOrderHistoryResultDto>,
-                    ListInboundOrderHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())
+                    ListInboundOrderHistoryQueryHandler>()
                 .AddRequestHandler<ConfirmInboundCommand, Result<ConfirmInboundDto>, ConfirmInboundCommandHandler>(x =>
                     x.Decorator.With<TransactionalDecorator>())
                 .AddRequestHandler<RejectInboundCommand, Result<RejectInboundDto>, RejectInboundCommandHandler>(x =>
@@ -44,7 +44,7 @@ public static class ApplicationConfig
                 .AddRequestHandler<ListPendingOutboundOrdersQuery, Result<PagedResult<PendingOutboundOrderDto>>,
                     ListPendingOutboundOrdersQueryHandler>()
                 .AddRequestHandler<ListOutboundHistoryQuery, Result<PagedResult<OutboundHistoryDto>>,
-                    ListOutboundHistoryQueryHandler>(x => x.Decorator.With<CachingDecorator>())
+                    ListOutboundHistoryQueryHandler>()
                 .AddRequestHandler<ListPendingOutboundQuantitiesQuery, Result<PendingOutboundQuantitiesDto>,
                     ListPendingOutboundQuantitiesQueryHandler>()
                 .AddRequestHandler<ConfirmOutboundCommand, Result<ConfirmOutboundDto>,

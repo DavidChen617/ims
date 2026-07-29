@@ -44,13 +44,18 @@ public sealed record OutboundHistoryDto(
     string? ConfirmedByName);
 
 public sealed class ListOutboundHistoryQueryHandler(
-    IOutboundOrderReader reader
+    IOutboundOrderReader reader,
+    ICacher cacher
 ) : IQueryHandler<ListOutboundHistoryQuery, Result<PagedResult<OutboundHistoryDto>>>
 {
     public async Task<Result<PagedResult<OutboundHistoryDto>>> HandleAsync(
         ListOutboundHistoryQuery request, CancellationToken cancellationToken)
     {
-        return await reader.ListHistoryAsync(
+        var cached = await cacher.GetAsync<PagedResult<OutboundHistoryDto>>(request.CacheKey, cancellationToken);
+        if (cached is not null)
+            return Result.Success(cached);
+
+        var result = await reader.ListHistoryAsync(
             request.WarehouseId,
             request.OrderNo,
             request.Status,
@@ -66,5 +71,10 @@ public sealed class ListOutboundHistoryQueryHandler(
             request.Page,
             request.Size,
             cancellationToken);
+
+        if (result.IsSuccess)
+            await cacher.SetAsync(request.CacheKey, result.Value, request.CacheTtl, cancellationToken);
+
+        return result;
     }
 }

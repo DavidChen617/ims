@@ -43,13 +43,18 @@ public sealed record InboundOrderHistoryDto(
 public sealed record InboundOrderHistoryResultDto(IReadOnlyList<InboundOrderHistoryDto> Items);
 
 public sealed class ListInboundOrderHistoryQueryHandler(
-    IInboundOrderReader reader
+    IInboundOrderReader reader,
+    ICacher cacher
 ) : IQueryHandler<ListInboundOrderHistoryQuery, Result<InboundOrderHistoryResultDto>>
 {
     public async Task<Result<InboundOrderHistoryResultDto>> HandleAsync(
         ListInboundOrderHistoryQuery request, CancellationToken cancellationToken)
     {
-        return await reader.ListOrderHistoryAsync(
+        var cached = await cacher.GetAsync<InboundOrderHistoryResultDto>(request.CacheKey, cancellationToken);
+        if (cached is not null)
+            return Result.Success(cached);
+
+        var result = await reader.ListOrderHistoryAsync(
             request.WarehouseId,
             request.Status,
             request.ProductNo,
@@ -64,5 +69,10 @@ public sealed class ListInboundOrderHistoryQueryHandler(
             request.AmountMax,
             cancellationToken)
             .Then(items => new InboundOrderHistoryResultDto(items));
+
+        if (result.IsSuccess)
+            await cacher.SetAsync(request.CacheKey, result.Value, request.CacheTtl, cancellationToken);
+
+        return result;
     }
 }

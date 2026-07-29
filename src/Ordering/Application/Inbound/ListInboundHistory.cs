@@ -47,13 +47,18 @@ public sealed record InboundHistoryResultDto(
     decimal TotalAmount);
 
 public sealed class ListInboundHistoryQueryHandler(
-    IInboundOrderReader reader
+    IInboundOrderReader reader,
+    ICacher cacher
 ) : IQueryHandler<ListInboundHistoryQuery, Result<InboundHistoryResultDto>>
 {
     public async Task<Result<InboundHistoryResultDto>> HandleAsync(
         ListInboundHistoryQuery request, CancellationToken cancellationToken)
     {
-        return await reader.ListHistoryAsync(
+        var cached = await cacher.GetAsync<InboundHistoryResultDto>(request.CacheKey, cancellationToken);
+        if (cached is not null)
+            return Result.Success(cached);
+
+        var result = await reader.ListHistoryAsync(
             request.WarehouseId,
             request.OrderNo,
             request.ProductNo,
@@ -72,5 +77,10 @@ public sealed class ListInboundHistoryQueryHandler(
             request.Page,
             request.Size,
             cancellationToken);
+
+        if (result.IsSuccess)
+            await cacher.SetAsync(request.CacheKey, result.Value, request.CacheTtl, cancellationToken);
+
+        return result;
     }
 }
