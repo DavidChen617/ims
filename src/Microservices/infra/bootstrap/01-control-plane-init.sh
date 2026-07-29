@@ -22,6 +22,11 @@ sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
 
 # vanilla kubeadm 沒有內建 CNI,裝 Calico。
 kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/tigera-operator.yaml
+
+# custom-resources.yaml 用到的 Installation CRD 是上一步 tigera-operator.yaml 才建的,
+# API server 要幾秒鐘才會註冊完成,不等的話 kubectl create 會直接噴 "no matches for kind"。
+kubectl wait --for=condition=established --timeout=90s crd/installations.operator.tigera.io
+
 curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/custom-resources.yaml
 kubectl create -f custom-resources.yaml
 
