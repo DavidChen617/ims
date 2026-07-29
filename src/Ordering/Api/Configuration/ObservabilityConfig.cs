@@ -28,7 +28,8 @@ public static class ObservabilityConfig
                         })
                         .AddHttpClientInstrumentation()
                         .AddSource("Npgsql")
-                        .AddSource(MessagingActivitySource.Name);
+                        .AddSource(MessagingActivitySource.Name)
+                        .AddRedisInstrumentation();
 
                     if (otlpEndpoint is not null)
                         tracing.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
