@@ -14,9 +14,6 @@ internal static class StockRepositoryExtensions
             : (Stock.Create(productId, warehouseId).Value, true);
     }
 
-    // 批次版本:一次查完整批 productId 缺哪些,缺的就地生成新的 Stock —— 不用再靠
-    // AddAsync/SaveAsync 分開新增跟更新,呼叫端存的時候一律用 SaveRangeAsync 的
-    // upsert 就好。
     public static async Task<IReadOnlyList<Stock>> GetOrCreateManyAsync(
         this IStockRepository repository, IReadOnlyList<Guid> productIds, Guid warehouseId, CancellationToken ct)
     {

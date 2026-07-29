@@ -8,8 +8,6 @@ public sealed class InboundOrderRejectedIntegrationEventHandler(
     ILogger<InboundOrderRejectedIntegrationEventHandler> logger
 ) : MessageContract.IIntegrationEventHandler<InboundOrderRejectedIntegrationEvent>
 {
-    // 去重(BeginIfNotProcessedAsync)現在在 IntegrationEventConsumer 裡就做完了,
-    // 早於這個 handler 被派送到之前 —— 我們進來的時候 transaction 已經是開著的了。
     public async Task HandleAsync(InboundOrderRejectedIntegrationEvent notification, CancellationToken cancellationToken)
     {
         var productIds = notification.Items.Select(i => i.ProductId).Distinct().ToList();

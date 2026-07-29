@@ -1,6 +1,5 @@
 using Application;
 using Dapper;
-using Infrastructure.Persistence;
 
 namespace Infrastructure.Persistence;
 

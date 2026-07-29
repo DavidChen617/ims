@@ -6,11 +6,6 @@ using Testcontainers.PostgreSql;
 
 namespace Inventory.IntegrationTest;
 
-// Repository 測試只會直接從容器裡解析服務出來用 —— 從來不會真的發 HTTP request,
-// 所以 JWT/authority 的設定完全不會被用到,不需要覆寫。
-//
-// 每次測試都起一個全新、用完就丟的 Postgres 容器,不依賴開發機(或 CI)上
-// 事先手動建好、migrate 過的 inventory_db_test。
 public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18")

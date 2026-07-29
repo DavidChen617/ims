@@ -43,8 +43,7 @@ public sealed class OutboundOrderCreatedIntegrationEventHandler(
                 "OutboundOrderCreatedIntegrationEvent: {EventId} for order {OutboundOrderId} could not reserve products {ProductIds}.",
                 notification.Id, notification.OutboundOrderId, insufficientProductIds);
 
-            // 全新的 transaction:上面那次預留嘗試已經被 rollback 掉了,不應該有任何東西
-            // 延續到「記錄失敗通知(以及 inbox 標記)」這一步裡。
+            // 全新的 transaction:上面那次預留嘗試已經被 rollback 掉了,不應該有任何東西延續到「記錄失敗通知(以及 inbox 標記)」這一步裡。
             await unitOfWork.BeginAsync(cancellationToken);
 
             await writer.WriteAsync(

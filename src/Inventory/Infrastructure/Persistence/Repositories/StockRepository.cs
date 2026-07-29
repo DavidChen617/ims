@@ -92,9 +92,7 @@ public sealed class StockRepository(IInventoryUnitOfWork unitOfWork) : IStockRep
         if (stocks.Count == 0)
             return Result.Success();
 
-        // 用 unnest 把整批 Stock 攤平成多欄陣列參數,一次 insert...on conflict do update
-        // 取代逐筆的 AddAsync/SaveAsync —— 不用先分好哪些是新增、哪些是更新,
-        // (product_id, warehouse_id) 的 unique constraint 交給資料庫自己判斷。
+        // 不用先分好哪些是新增、哪些是更 (product_id, warehouse_id) 的 unique constraint 交給資料庫自己判斷。
         var cmd = new CommandDefinition(
             """
             insert into stocks (id, product_id, warehouse_id, quantity, cumulative_shipped,

@@ -57,9 +57,6 @@ public static class Dependency
                 .AddHostedService<OutboxProcessor>()
                 .AddHostedService<IntegrationEventConsumer>()
                 .AddSendrNotification()
-                // InboxCommitDecorator 包在每個 handler 外面,處理完就自動
-                // MarkProcessedAsync + CommitAsync——是這裡、每個訂閱各自決定要套用,
-                // 不是 AddIntegrationEventSubscription 本身綁死的行為。
                 .AddIntegrationEventSubscription<InboundOrderCreatedIntegrationEvent,
                     InboundOrderCreatedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
                 .AddIntegrationEventSubscription<InboundOrderRejectedIntegrationEvent,

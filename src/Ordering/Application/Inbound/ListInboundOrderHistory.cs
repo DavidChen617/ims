@@ -4,9 +4,6 @@ using Domain.InboundOrders;
 
 namespace Application.Inbound;
 
-// ListInboundHistoryQuery(依需求文件 v2.2 §7,按商品品項攤平)的訂單層級版本。
-// 這支是給入庫作業畫面裡的「已處理清單」頁籤用的 —— 一張單一列,
-// 對齊 ListOutboundHistoryQuery 本來就有的形狀。
 public sealed record ListInboundOrderHistoryQuery(
     Guid WarehouseId,
     InboundOrderStatus? Status,

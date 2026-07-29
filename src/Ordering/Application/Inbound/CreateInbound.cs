@@ -11,7 +11,6 @@ public sealed record CreateInboundCommand(
 ) : ICommand<Result<CreateInboundDto>>;
 
 // UnitPrice 是選填的 —— 沒帶的話就用商品目前自己的定價
-// (依需求文件 v2.2 §3:「單價預設帶入商品定價,可由使用者修改」)。
 public sealed record CreateInboundItem(Guid ProductId, string ProductNo, int Quantity, decimal? UnitPrice);
 
 public sealed record CreateInboundDto(Guid Id, string Status);

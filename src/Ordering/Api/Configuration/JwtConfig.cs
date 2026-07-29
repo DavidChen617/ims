@@ -30,7 +30,6 @@ public static class JwtConfig
 
         public IServiceCollection AddOrderingAuthorization()
         {
-            // Role 必須跟 Organization 的 Domain.Users.Role enum 對得上(Ordering 沒有那個型別的本地副本)。
             services.AddAuthorization(options =>
             {
                 options.AddPolicy("AdminOrWarehouseAdmin",
