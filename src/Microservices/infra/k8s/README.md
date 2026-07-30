@@ -39,16 +39,17 @@ Kustomize 會用 `infra/k8s/.env` 產生 `ims-env` Secret，所有原本 Compose
 kubectl label node <entry-node-name> ims-role=ingress
 ```
 
-Migration 用的 ConfigMap 不是 Kustomize 管的（kustomize 的 `configMapGenerator` 不支援整個目錄／glob，硬要手動列每個檔名等於沒解決問題），改成從實際的 `Migrations` 目錄動態產生，`kubectl apply -k` 之前要先跑：
+`migrations.yaml` 的 3 個 Job 用 `golang-migrate` 的 `github` source driver（`-source=github://...`），
+直接在 Job 執行當下從 GitHub 拉 `.sql` 檔案，不用 ConfigMap、不用另外同步任何檔案。檔案裡放的是
+`__MIGRATION_REPO__`/`__MIGRATION_REF__` 這兩個 placeholder，CI 的 `deploy` job 會自動用
+`github.repository`/`github.ref_name` 替換掉；手動部署要自己先換成實際值：
 
 ```bash
-kubectl create namespace ims --dry-run=client -o yaml | kubectl apply -f -
-kubectl create configmap organization-migrations -n ims --from-file=../../src/Organization/Migrations --dry-run=client -o yaml | kubectl apply -f -
-kubectl create configmap ordering-migrations -n ims --from-file=../../src/Ordering/Migrations --dry-run=client -o yaml | kubectl apply -f -
-kubectl create configmap inventory-migrations -n ims --from-file=../../src/Inventory/Migrations --dry-run=client -o yaml | kubectl apply -f -
+sed -i "s#__MIGRATION_REPO__#DavidChen617/ims#g; s#__MIGRATION_REF__#v0.1.6#g" infra/k8s/migrations.yaml
 ```
 
-（CI 的 `deploy` job 已經自動做這件事；這裡是給手動部署／debug 用，執行位置要在 repo 裡跑，讓上面的相對路徑對得上實際的 Migrations 目錄。）
+（`__MIGRATION_REF__` 帶你要部署的那個 git tag，讓拉下來的 migration 內容跟這次部署的版本一致；
+repo 是 public 的,不用帶 token。）
 
 ```bash
 kubectl apply -k infra/k8s

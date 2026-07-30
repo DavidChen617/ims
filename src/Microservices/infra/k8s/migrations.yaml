@@ -1,3 +1,6 @@
+# -source 用 golang-migrate 的 github source driver 直接從 repo 拉 migration 檔案。
+# __MIGRATION_REPO__/__MIGRATION_REF__ 這兩個 placeholder 由 CI 的 deploy job 用 sed 換成 github.repository/github.ref_name,
+# 手動部署要自己換成實際的 owner/repo 跟 git tag。
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -29,17 +32,9 @@ spec:
                   name: ims-env
                   key: ORGANIZATION_MIGRATION_DATABASE_URL
           args:
-            - -path=/migrations
+            - -source=github://__MIGRATION_REPO__/src/Microservices/src/Organization/Migrations#__MIGRATION_REF__
             - -database=$(ORGANIZATION_MIGRATION_DATABASE_URL)
             - up
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-      volumes:
-        - name: migrations
-          configMap:
-            name: organization-migrations
 ---
 apiVersion: batch/v1
 kind: Job
@@ -72,17 +67,9 @@ spec:
                   name: ims-env
                   key: ORDERING_MIGRATION_DATABASE_URL
           args:
-            - -path=/migrations
+            - -source=github://__MIGRATION_REPO__/src/Microservices/src/Ordering/Migrations#__MIGRATION_REF__
             - -database=$(ORDERING_MIGRATION_DATABASE_URL)
             - up
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-      volumes:
-        - name: migrations
-          configMap:
-            name: ordering-migrations
 ---
 apiVersion: batch/v1
 kind: Job
@@ -115,14 +102,6 @@ spec:
                   name: ims-env
                   key: INVENTORY_MIGRATION_DATABASE_URL
           args:
-            - -path=/migrations
+            - -source=github://__MIGRATION_REPO__/src/Microservices/src/Inventory/Migrations#__MIGRATION_REF__
             - -database=$(INVENTORY_MIGRATION_DATABASE_URL)
             - up
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-      volumes:
-        - name: migrations
-          configMap:
-            name: inventory-migrations

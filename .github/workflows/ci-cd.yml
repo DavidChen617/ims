@@ -92,9 +92,6 @@ jobs:
         with:
           sparse-checkout: |
             src/Microservices/infra/k8s
-            src/Microservices/src/Organization/Migrations
-            src/Microservices/src/Ordering/Migrations
-            src/Microservices/src/Inventory/Migrations
 
       - name: 算出小寫的 GHCR namespace
         id: owner
@@ -103,21 +100,7 @@ jobs:
       - name: 準備 .env
         run: cp ~/k8s/.env src/Microservices/infra/k8s/.env
 
-      - name: 從 Migrations 目錄直接產生 migration ConfigMap(不是手動同步的靜態檔案)
-        run: |
-          set -euo pipefail
-          kubectl create namespace ims --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create configmap organization-migrations -n ims \
-            --from-file=src/Microservices/src/Organization/Migrations \
-            --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create configmap ordering-migrations -n ims \
-            --from-file=src/Microservices/src/Ordering/Migrations \
-            --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create configmap inventory-migrations -n ims \
-            --from-file=src/Microservices/src/Inventory/Migrations \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: 把 image tag 指到這次建好的版本
+      - name: 把 image tag、migration source 的 repo/ref 指到這次建好的版本
         working-directory: src/Microservices/infra/k8s
         run: |
           set -euo pipefail
@@ -128,6 +111,7 @@ jobs:
             ims/ordering=ghcr.io/${OWNER}/ims-ordering:${TAG} \
             ims/inventory=ghcr.io/${OWNER}/ims-inventory:${TAG} \
             ims/web=ghcr.io/${OWNER}/ims-web:${TAG}
+          sed -i "s#__MIGRATION_REPO__#${{ github.repository }}#g; s#__MIGRATION_REF__#${TAG}#g" migrations.yaml
 
       - name: 刪舊的 migration Job(Job 是 immutable,同名不能重新 apply)
         run: kubectl -n ims delete job organization-migrate ordering-migrate inventory-migrate --ignore-not-found
