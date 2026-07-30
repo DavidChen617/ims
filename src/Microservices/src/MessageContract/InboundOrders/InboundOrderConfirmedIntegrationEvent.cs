@@ -3,5 +3,7 @@ namespace MessageContract.InboundOrders;
 public sealed record InboundOrderConfirmedIntegrationEvent(
     Guid InboundOrderId,
     Guid WarehouseId,
-    Guid ConfirmedBy
+    string? WarehouseName,
+    Guid ConfirmedBy,
+    IReadOnlyList<EnrichedOrderItem> Items
 ) : IntegrationEvent, INotificationIntegrationEvent;

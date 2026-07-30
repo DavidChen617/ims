@@ -3,11 +3,11 @@ using MessageContract.InboundOrders;
 
 namespace Application.Stocks.EventHandling;
 
-public sealed class InboundOrderCreatedIntegrationEventHandler(
+public sealed class InboundOrderConfirmedIntegrationEventHandler(
     IStockRepository repository
-) : MessageContract.IIntegrationEventHandler<InboundOrderCreatedIntegrationEvent>
+) : MessageContract.IIntegrationEventHandler<InboundOrderConfirmedIntegrationEvent>
 {
-    public async Task HandleAsync(InboundOrderCreatedIntegrationEvent notification, CancellationToken cancellationToken)
+    public async Task HandleAsync(InboundOrderConfirmedIntegrationEvent notification, CancellationToken cancellationToken)
     {
         var productIds = notification.Items.Select(i => i.ProductId).Distinct().ToList();
         var stocks = await repository.GetOrCreateManyAsync(productIds, notification.WarehouseId, cancellationToken);

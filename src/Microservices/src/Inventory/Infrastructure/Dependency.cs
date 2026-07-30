@@ -1,4 +1,5 @@
 using Application;
+using Application.Abstracts;
 using Application.BehaviorDecorator;
 using Application.Stocks;
 using Application.Stocks.EventHandling;
@@ -15,8 +16,6 @@ using MessageContract.OutboundOrders;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel;
-
-using Application.Abstracts;
 namespace Infrastructure;
 
 public static class Dependency
@@ -57,10 +56,8 @@ public static class Dependency
                 .AddHostedService<OutboxProcessor>()
                 .AddHostedService<IntegrationEventConsumer>()
                 .AddSendrNotification()
-                .AddIntegrationEventSubscription<InboundOrderCreatedIntegrationEvent,
-                    InboundOrderCreatedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
-                .AddIntegrationEventSubscription<InboundOrderRejectedIntegrationEvent,
-                    InboundOrderRejectedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
+                .AddIntegrationEventSubscription<InboundOrderConfirmedIntegrationEvent,
+                    InboundOrderConfirmedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
                 .AddIntegrationEventSubscription<OutboundOrderCreatedIntegrationEvent,
                     OutboundOrderCreatedIntegrationEventHandler>(h => h.Decorator.With<InboxCommitDecorator>())
                 .AddIntegrationEventSubscription<OutboundOrderRejectedIntegrationEvent,
