@@ -10,5 +10,8 @@ public interface IStockRepository
 
     Task<Result<IReadOnlyList<Stock>>> GetByProductsAndWarehouseAsync(
         IReadOnlyList<Guid> productIds, Guid warehouseId, CancellationToken ct);
-    Task<Result> SaveRangeAsync(IReadOnlyList<Stock> stocks, CancellationToken ct);
+
+    // 回傳值是「因為併發衝突而被跳過、沒有真的寫進去」的 ProductId 清單。
+    // 空清單代表全部成功。
+    Task<Result<IReadOnlyList<Guid>>> SaveRangeAsync(IReadOnlyList<Stock> stocks, CancellationToken ct);
 }

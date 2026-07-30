@@ -1,9 +1,8 @@
+using Application.Abstracts;
 using Domain.Stocks;
 using MessageContract.OutboundOrders;
 using Microsoft.Extensions.Logging;
 using SharedKernel;
-
-using Application.Abstracts;
 namespace Application.Stocks.EventHandling;
 
 public sealed class OutboundOrderCreatedIntegrationEventHandler(
@@ -35,6 +34,14 @@ public sealed class OutboundOrderCreatedIntegrationEventHandler(
             stock.SetDisplayInfo(item.ProductNo, item.ProductName, item.Unit, notification.WarehouseName);
         }
 
+        if (insufficientProductIds.Count == 0)
+        {
+            // 記憶體檢查當下庫存足夠,不代表寫入當下還夠，所以使用原子條件式 UPDATE 防止併發超賣的問題,
+            // 沒能寫進去的 ProductId 併入 insufficientProductIds 用同一套失敗流程處理。
+            var saveResult = await repository.SaveRangeAsync(stocks, cancellationToken);
+            insufficientProductIds.AddRange(saveResult.Value);
+        }
+
         if (insufficientProductIds.Count > 0)
         {
             await unitOfWork.RollbackAsync(cancellationToken);
@@ -53,8 +60,6 @@ public sealed class OutboundOrderCreatedIntegrationEventHandler(
 
             return;
         }
-
-        await repository.SaveRangeAsync(stocks, cancellationToken);
 
         await writer.WriteAsync(
             new OutboundInventoryReservedIntegrationEvent(notification.OutboundOrderId, notification.WarehouseId),
