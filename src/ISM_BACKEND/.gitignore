@@ -1,0 +1,18 @@
+# ── .NET build outputs ──
+bin/
+obj/
+publish/
+
+# ── 機密設定檔（含真實帳密/連線字串/金鑰，禁止入版控）──
+appsettings.Development.json
+appsettings.*.local.json
+appsettings.Production.json
+
+# ── IDE ──
+.vs/
+*.user
+.idea
+
+# ── OS ──
+Thumbs.db
+.DS_Store
