@@ -8,10 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Inventory.IntegrationTest.Messaging;
 
-// 端對端測試,對著一個真實(用完就丟)的 Kafka broker:直接塞一筆原始訊息到
-// "ordering.events",模擬 Ordering 的 OutboxProcessor 會產生的訊息,再驗證
-// app 自己的 IntegrationEventConsumer/OutboxProcessor 這條管線(透過落在
-// "inventory.events"/DLQ topic 上的結果訊息)以及最後的 DB 狀態。
+// 端對端測試,對真實的 Kafka broker:塞一筆原始訊息到 "ordering.events",模擬 Ordering 的 OutboxProcessor 會產生的訊息,
+// 再驗證 app 自己的 IntegrationEventConsumer/OutboxProcessor
+// 這條管線(透過落在"inventory.events"/DLQ topic 上的結果訊息)以及最後的 DB 狀態。
 public class OutboundOrderMessagingTests(KafkaCustomWebApplicationFactory factory)
     : IClassFixture<KafkaCustomWebApplicationFactory>
 {
@@ -100,6 +99,52 @@ public class OutboundOrderMessagingTests(KafkaCustomWebApplicationFactory factor
             Assert.Equal(0, stock.CumulativeShipped);
             // 這次預留嘗試整個被 rollback 了,所以 SetDisplayInfo 從來沒有真正寫進去。
             Assert.Null(stock.ProductNo);
+        }
+        finally
+        {
+            await DeleteStockAsync(stockId);
+        }
+    }
+
+    [Fact]
+    public async Task GivenDuplicateEventId_WhenConsumedTwice_ThenReservesOnlyOnce()
+    {
+        var productId = Guid.CreateVersion7();
+        var warehouseId = Guid.CreateVersion7();
+        var outboundOrderId = Guid.CreateVersion7();
+
+        var stockId = await SeedStockAsync(productId, warehouseId, quantity: 10);
+
+        using var producer = KafkaTestSupport.CreateProducer(factory.BootstrapServers);
+        using var consumer = KafkaTestSupport.CreateConsumer(
+            factory.BootstrapServers, KafkaCustomWebApplicationFactory.InventoryTopic, $"test-{outboundOrderId}");
+
+        try
+        {
+            var duplicateEvent = new OutboundOrderCreatedIntegrationEvent(
+                outboundOrderId, warehouseId, "測試倉庫",
+                [new EnrichedOrderItem(productId, "P-001", "測試商品", "個", 4)]);
+
+            await KafkaTestSupport.ProduceAsync(
+                producer, KafkaCustomWebApplicationFactory.OrderingTopic,
+                nameof(OutboundOrderCreatedIntegrationEvent), duplicateEvent);
+            await KafkaTestSupport.ProduceAsync(
+                producer, KafkaCustomWebApplicationFactory.OrderingTopic,
+                nameof(OutboundOrderCreatedIntegrationEvent), duplicateEvent);
+
+            var reserved = KafkaTestSupport.ConsumeMatching<OutboundInventoryReservedIntegrationEvent>(
+                consumer,
+                nameof(OutboundInventoryReservedIntegrationEvent),
+                e => e.OutboundOrderId == outboundOrderId,
+                Timeout);
+            Assert.NotNull(reserved);
+
+            // 給第二則(重複的)訊息足夠時間被消費完,而不是還在排隊等處理。
+            await Task.Delay(TimeSpan.FromSeconds(3));
+
+            var stock = await GetStockAsync(stockId);
+            Assert.Equal(6, stock.Quantity); // 10 - 4,如果被處理兩次會變成 2
+            Assert.Equal(4, stock.CumulativeShipped);
         }
         finally
         {
