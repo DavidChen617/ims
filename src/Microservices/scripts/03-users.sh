@@ -6,13 +6,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 load_state
 
 step "Admin 查看全部人員 (Organization, AdminOrWarehouseAdminOnly)"
-call GET "$ORG_URL/api/v1/users" "" "$ADMIN_TOKEN"
+# 用 username 篩選,不用預設分頁——本機環境跑過多次累積下來的使用者數早就超過預設頁面大小,
+# 清單是照 created_at 正序排,剛建的使用者不會出現在第一頁裡。
+call GET "$ORG_URL/api/v1/users?username=$WU_USERNAME" "" "$ADMIN_TOKEN"
 expect_status 200
 echo "$CALL_BODY" | jq -e --arg id "$WU_USER_ID" '.items[] | select(.id == $id)' >/dev/null \
   && echo ">> OK,清單裡找到 WarehouseUser userId=$WU_USER_ID" \
   || { echo "!! 清單裡沒找到剛建的 WarehouseUser,腳本中止。" >&2; exit 1; }
 
 step "WarehouseAdmin 查看『自己倉庫』的人員清單 (Organization, WarehouseStaffOnly)"
+# 這支沒有分頁也沒有篩選參數,回傳該倉庫全部人員,不會受累積資料量影響。
 call GET "$ORG_URL/api/v1/users/warehouse" "" "$WA_TOKEN"
 expect_status 200
 echo "$CALL_BODY" | jq -e --arg id "$WU_USER_ID" '.items[] | select(.id == $id)' >/dev/null \
