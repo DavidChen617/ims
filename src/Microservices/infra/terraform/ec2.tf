@@ -4,7 +4,10 @@ resource "aws_instance" "control_plane" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.cluster.id]
   key_name               = var.key_name
-  source_dest_check = false
+  source_dest_check      = false
+  user_data = templatefile("${path.module}/templates/00-common.sh.tpl", {
+    hostname = "${var.project}-control-plane"
+  })
 
   root_block_device {
     volume_size = 30
@@ -34,6 +37,9 @@ resource "aws_instance" "edge" {
   vpc_security_group_ids = [aws_security_group.cluster.id, aws_security_group.edge_public.id]
   key_name               = var.key_name
   source_dest_check      = false
+  user_data = templatefile("${path.module}/templates/00-common.sh.tpl", {
+    hostname = "${var.project}-edge"
+  })
 
   root_block_device {
     volume_size = 30
@@ -66,6 +72,9 @@ resource "aws_instance" "worker" {
   # 這種封包的來源/目的地 IP 是 pod CIDR、跟這台實例自己的 ENI IP 對不上,
   # AWS 預設會用 source/dest check 把它們丟掉,一定要關掉。
   source_dest_check = false
+  user_data = templatefile("${path.module}/templates/00-common.sh.tpl", {
+    hostname = "${var.project}-worker-${count.index + 1}"
+  })
 
   root_block_device {
     volume_size = 40
