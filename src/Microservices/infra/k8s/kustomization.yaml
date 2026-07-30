@@ -4,7 +4,6 @@ namespace: ims
 resources:
   - namespace.yaml
   - config.yaml
-  - migrations-config.yaml
   - storage.yaml
   - postgres.yaml
   - kafka.yaml
