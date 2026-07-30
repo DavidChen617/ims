@@ -93,4 +93,4 @@ kubectl -n ims port-forward svc/jaeger 16686:16686
 - `infra/k8s/.env` 被 `.gitignore` 排除，不會跟著 manifests 提交。
 - Kustomize 產生的 Secret 只是 Kubernetes Secret，不等於雲端 KMS 加密；正式環境可再替換成外部 secret 管理。
 - K8s 內部服務會用 `.env` 的 `KAFKA_BOOTSTRAP_SERVERS=kafka:9092` 連 Kafka；若你改 `.env`，請保留叢集內可解析的 `kafka:9092` listener。
-- PostgreSQL/Kafka 的 PVC 用 `storage.yaml` 裡靜態綁定的 local PV（`storageClassName: local-storage`），資料固定放在 `ims-worker-1`/`ims-worker-2` 的本地磁碟，套用前記得照 `infra/bootstrap/README.md` 先在對應 node 建好目錄。
+- PostgreSQL/Kafka 的 PVC 用 `storage.yaml` 裡靜態綁定的 local PV（`storageClassName: local-storage`），資料固定放在 `ims-worker-1`/`ims-worker-2` 的本地磁碟，套用前記得照 `infra/terraform/bootstrap/README.md` 先在對應 node 建好目錄。
