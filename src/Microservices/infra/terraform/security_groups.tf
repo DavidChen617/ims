@@ -1,3 +1,12 @@
+# apply 當下的來源 IP 自動抓,不用每次 IP 變了就手動改 tfvars。
+data "http" "my_ip" {
+  url = "https://checkip.amazonaws.com"
+}
+
+locals {
+  admin_cidrs = concat(var.admin_cidrs, ["${chomp(data.http.my_ip.response_body)}/32"])
+}
+
 # 四台共用：cluster 內部互打全開（etcd/kubelet/apiserver/Calico VXLAN 等埠很多且隨版本變動，
 # 同一顆 SG 自我參照直接放行比逐一列埠務實），對外只開 SSH 與 kube-apiserver，且僅限 admin_cidrs。
 resource "aws_security_group" "cluster" {
@@ -25,7 +34,7 @@ resource "aws_security_group_rule" "ssh_from_admin" {
   to_port           = 22
   protocol          = "tcp"
   security_group_id = aws_security_group.cluster.id
-  cidr_blocks       = var.admin_cidrs
+  cidr_blocks       = local.admin_cidrs
 }
 
 resource "aws_security_group_rule" "kube_api_from_admin" {
@@ -34,7 +43,7 @@ resource "aws_security_group_rule" "kube_api_from_admin" {
   to_port           = 6443
   protocol          = "tcp"
   security_group_id = aws_security_group.cluster.id
-  cidr_blocks       = var.admin_cidrs
+  cidr_blocks       = local.admin_cidrs
 }
 
 resource "aws_security_group_rule" "cluster_egress_all" {

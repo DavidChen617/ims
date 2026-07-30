@@ -26,8 +26,9 @@ variable "key_name" {
 }
 
 variable "admin_cidrs" {
-  description = "允許 SSH(22) 與 kube-apiserver(6443) 存取的來源 CIDR（例如你自己的固定 IP /32）"
+  description = "額外允許 SSH(22)/kube-apiserver(6443) 存取的來源 CIDR。apply 當下的來源 IP 一律會自動加進去，這裡只用來補其他固定 IP（辦公室之類），沒有的話留空即可"
   type        = list(string)
+  default     = []
 }
 
 variable "control_plane_instance_type" {
