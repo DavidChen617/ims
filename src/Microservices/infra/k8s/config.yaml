@@ -55,6 +55,17 @@ data:
             proxy_set_header X-Real-IP $remote_addr;
         }
 
+        location /jaeger {
+            proxy_pass http://jaeger:16686;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # /web 只是別名,實際前端一直都在根目錄,避免另外改 Vite base/React Router basename 重建 image。
+        location /web {
+            rewrite ^/web/?(.*)$ /$1 permanent;
+        }
+
         location / {
             try_files $uri $uri/ /index.html;
         }

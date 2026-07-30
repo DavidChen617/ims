@@ -39,6 +39,10 @@ spec:
                 secretKeyRef:
                   name: ims-env
                   key: COLLECTOR_OTLP_ENABLED
+            # nginx 用 /jaeger 這個 path 反代進來,Jaeger UI 自己內部的資源/API 路徑也要對得上,
+            # 不然頁面資源會抓到根目錄去 404。
+            - name: QUERY_BASE_PATH
+              value: /jaeger
           ports:
             - name: ui
               containerPort: 16686
