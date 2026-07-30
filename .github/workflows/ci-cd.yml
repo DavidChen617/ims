@@ -28,6 +28,7 @@ jobs:
       - run: dotnet build Microservices.slnx --configuration Release --no-restore
 
       - run: echo "Authentication__Schemes__Bearer__SigningKeys__0__Value=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+      - run: echo "Admin__Password=1qazXSW@" >> "$GITHUB_ENV"
 
       - run: openssl genrsa -out tests/test-private.pem 2048
 
