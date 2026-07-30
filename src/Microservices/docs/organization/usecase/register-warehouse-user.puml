@@ -1,0 +1,55 @@
+@startuml Register Warehouse User
+
+title 倉庫管理者建立一般員工帳號（POST /api/v1/auth/warehouseAdmin/register/warehouseUser，WarehouseAdminOnly）
+
+actor "倉庫管理者\n(WarehouseAdmin)" as Caller
+
+box "Organization.Api" #LightBlue
+    participant "RegisterWarehouseUserEndpoint" as Endpoint
+end box
+
+box "Organization.Domain" #Lavender
+    participant "User" as UserAgg
+end box
+
+box "Organization.Infrastructure" #WhiteSmoke
+    participant "IUserRepository" as UserRepo
+    participant "IPasswordHasher" as Hasher
+    participant "ITokenGenerator" as TokenGen
+    participant "IRefreshTokenRepository" as RefreshRepo
+end box
+
+database "organization_db" as DB
+
+Caller -> Endpoint : POST { name, username, password }\n(Authorization: Bearer <呼叫者自己的 JWT>)
+Endpoint -> Endpoint : RequireAuthorization("WarehouseAdminOnly")
+Endpoint -> Endpoint : warehouseId = 從呼叫者 JWT claim 取得\n（不接受 request body 傳入）
+Endpoint -> UserRepo : GetByUsername(username, ct)
+
+alt 帳號已存在
+    UserRepo --> Endpoint : Result.Success
+    Endpoint --> Caller : 400 BadRequest "Username already exists"
+else 帳號不存在
+    Endpoint -> UserAgg : User.Register(warehouseId, name, username,\nhasher.Hash(password), Role.WarehouseUser)
+    UserAgg --> Endpoint : new User
+    Endpoint -> Endpoint : TokenClaims.FromUserAsync(newUser) → 立刻簽發\n該新帳號自己的 accessToken / refreshToken
+    Endpoint -> TokenGen : GenerateToken / GenerateRefreshToken
+    Endpoint -> UserRepo : AddAsync(newUser, ct)
+    UserRepo -> DB : insert into users
+    Endpoint -> RefreshRepo : AddAsync(refreshToken, ct)
+    RefreshRepo -> DB : insert into refresh_tokens
+    Endpoint --> Caller : 200 OK { userId, accessToken, refreshToken, refreshTokenExpiredAt }
+end
+
+note over Endpoint
+  角色固定寫死為 Role.WarehouseUser，這支 API 不能拿來
+  建立 WarehouseAdmin 或 Admin。
+end note
+
+note over Endpoint, UserRepo
+  另有 admin/register/user（AdminOnly）結構完全相同，
+  差別是 WarehouseId／Role 由總管理者在 request body 指定，
+  可以建立任何角色、指派到任意倉庫，這裡不重複畫。
+end note
+
+@enduml

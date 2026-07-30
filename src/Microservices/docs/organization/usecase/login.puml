@@ -1,0 +1,51 @@
+@startuml Login
+
+title 登入（POST /api/v1/auth/login，匿名）—— 簽發 JWT AccessToken／RefreshToken
+
+actor "Admin / WarehouseAdmin / WarehouseUser" as Caller
+
+box "Organization.Api" #LightBlue
+    participant "LoginEndpoint" as Endpoint
+end box
+
+box "Organization.Infrastructure" #WhiteSmoke
+    participant "IUserRepository" as UserRepo
+    participant "IPasswordHasher" as Hasher
+    participant "IWarehouseRepository" as WarehouseRepo
+    participant "ITokenGenerator" as TokenGen
+    participant "IRefreshTokenRepository" as RefreshRepo
+end box
+
+database "organization_db" as DB
+
+Caller -> Endpoint : POST /api/v1/auth/login { username, password }
+Endpoint -> UserRepo : GetByUsername(username, ct)
+
+alt 找不到帳號
+    UserRepo --> Endpoint : Result.Failure
+    Endpoint --> Caller : 401 Unauthorized
+else 找到帳號
+    Endpoint -> Hasher : Verify(user.PasswordHash, password)
+    alt 密碼錯誤
+        Hasher --> Endpoint : false
+        Endpoint --> Caller : 401 Unauthorized
+    else 密碼正確
+        Endpoint -> WarehouseRepo : GetByIdAsync(user.WarehouseId, ct)\n（Admin 沒有 WarehouseId，跳過）
+        WarehouseRepo --> Endpoint : warehouseName
+        Endpoint -> Endpoint : TokenClaims(userId, name, username, role,\nwarehouseId, warehouseName)
+        Endpoint -> TokenGen : GenerateToken(claims) → accessToken（RSA 簽章 JWT）
+        Endpoint -> TokenGen : GenerateRefreshToken() → refreshToken
+        Endpoint -> RefreshRepo : AddAsync(RefreshToken.Create(refreshToken, userId, expiresAt))
+        RefreshRepo -> DB : insert into refresh_tokens
+        Endpoint --> Caller : 200 OK { userId, accessToken, refreshToken, refreshTokenExpiredAt }
+    end
+end
+
+note over TokenGen
+  role／warehouseId／warehouseName 都內嵌在 JWT claims 裡。
+  Ordering、Inventory 的授權策略（AdminOnly／WarehouseAdminOnly／
+  WarehouseUserOnly／AnyWarehouseRole）都是直接解析這組 claims，
+  請求當下不會再回頭呼叫 Organization 驗證身分或查倉庫名稱。
+end note
+
+@enduml

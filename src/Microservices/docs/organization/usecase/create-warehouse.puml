@@ -1,0 +1,44 @@
+@startuml Create Warehouse
+
+title 新增倉庫（POST /api/v1/warehouse，AdminOnly）
+
+actor "總管理者\n(Admin)" as Admin
+
+box "Organization.Api" #LightBlue
+    participant "CreateWarehouseEndpoint" as Endpoint
+    participant "TransactionFilter" as Filter
+end box
+
+box "Organization.Domain" #Lavender
+    participant "Warehouse" as WarehouseAgg
+end box
+
+box "Organization.Infrastructure" #WhiteSmoke
+    participant "IWarehouseRepository" as Repo
+    participant "IOrganizationUnitOfWork" as UoW
+end box
+
+database "organization_db" as DB
+
+Admin -> Endpoint : POST /api/v1/warehouse { name }
+Endpoint -> Filter : AddEndpointFilter<TransactionFilter>
+Filter -> UoW : BeginAsync(ct)
+Filter -> Endpoint : next() → Handle(request, ct)
+
+Endpoint -> Repo : GetByNameAsync(name, ct)
+alt 倉庫名稱已存在
+    Repo --> Endpoint : Result.Success
+    Endpoint --> Filter : Error 400 BadRequest "Warehouse name already exists"
+else 名稱可用
+    Endpoint -> WarehouseAgg : Warehouse.Create(name)
+    WarehouseAgg --> Endpoint : new Warehouse
+    Endpoint -> Repo : AddAsync(warehouse, ct)
+    Repo -> DB : insert into warehouses
+    Endpoint --> Filter : Result.Success(WarehouseDto)
+end
+
+Filter -> UoW : CommitAsync(ct)\n（失敗則 RollbackAsync，見 TransactionFilter）
+UoW -> DB : commit
+Filter --> Admin : 201 Created { id, name }
+
+@enduml
