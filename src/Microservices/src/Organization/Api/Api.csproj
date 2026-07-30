@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
@@ -16,5 +16,9 @@
     <ProjectReference Include="..\Domain\Domain.csproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>
+  
+  <PropertyGroup>
+    <UserSecretsId>930cef26-2534-4c3c-8c8b-e20d5a23323c</UserSecretsId>
+  </PropertyGroup>
 
 </Project>
