@@ -4,163 +4,199 @@
 
 <h1 align="center">IMS Microservices</h1>
 
-<p align="center">
-  以 Domain-Driven Design 打造的庫存管理微服務範例，使用 .NET、PostgreSQL、Kafka、Redis 與 React。
-</p>
-
-<p align="center">
-  <strong>Organization</strong> · <strong>Ordering</strong> · <strong>Inventory</strong> · <strong>Web</strong>
-</p>
-
----
-
 ## 專案概覽
 
-IMS Microservices 是一套以業務邊界為核心設計的庫存管理系統。這個專案示範如何用 Domain-Driven Design（DDD）把倉庫、訂單、庫存、身份與跨服務整合規則清楚地放進程式碼，而不是讓規則散落在 Controller、SQL 或流程腳本裡。
+IMS Microservices 是一套以 DDD 為架構的庫存管理系統，核心功能有：
 
-系統切成三個後端服務：
+- **出/入庫歷程查詢**：可追蹤每一筆入庫、出庫紀錄。
+- **人員管理**：可建立倉管人員（WarehouseAdmin）與一般工作人員（WarehouseUser）帳號，依角色賦予不同權限。
+- **出入庫申請流程**：工作人員可申請入庫單、出庫單，經倉管確認或拒絕後觸發後續庫存異動。
 
-| 服務 | 職責 | 核心概念 |
-| --- | --- | --- |
-| Organization | 身份、倉庫、使用者、JWT issuer、JWKS | User, Role, Warehouse, RefreshToken |
-| Ordering | 商品、入庫單、出庫單、訂單歷程 | Product, ProductUnit, InboundOrder, OutboundOrder |
-| Inventory | 庫存狀態與庫存異動反應 | Stock, reservation, release, shipment counters |
+<img src="./images/demo2.png" width="700" alt="整體架構圖">
 
-每個服務擁有自己的資料庫 schema 與 API。服務之間透過 Kafka integration events 協作，不直接共用資料表。
+## Why DDD
 
-> [!NOTE]
-> 專案刻意把業務規則放在 Domain/Application 層，再由 Infrastructure 接 PostgreSQL、Kafka、Redis、JWT 與 observability。這讓業務模型更容易被主管、PM、倉儲人員與工程師共同討論，也降低後續變更成本。
+DDD 的核心精神，是引導開發人員把問題視為「領域」（Domain），將每個獨立的業務問題劃分成一個 Bounded Context——例如「訂單」與「庫存」就是兩個獨立的 Bounded Context，各自處理自己的領域規則，並透過[統一語言](https://martinfowler.com/bliki/UbiquitousLanguage.html)（Ubiquitous Language）讓開發人員與領域專家用同一套詞彙討論問題。
 
-## 為什麼適合用 DDD
+DDD 聽起來很酷，但關鍵不在於套用這個模式本身，而在於程式碼的組織方式是否真的反映了業務規則與業務術語。簡單的 CRUD 應用套用 DDD 只會徒增複雜度；開發人員應該依照業務的實際複雜程度選擇架構——簡單的問題用簡單的架構解決，同時保留隨業務成長而擴展架構的彈性。
 
-這個系統不是單純 CRUD。它包含多個容易在傳統分層架構中被稀釋的業務規則：
+## Layer in DDD
 
-- 只有 WarehouseUser 可以建立入庫/出庫單。
-- WarehouseAdmin 負責確認或拒絕倉庫訂單。
-- 出庫單建立後會先進入 `Processing`，等待 Inventory 非同步嘗試預留庫存。
-- 庫存預留成功後，出庫單變成 `Pending`；預留失敗則由系統自動拒絕。
-- 入庫/出庫確認後會發布事件，讓 Inventory 更新庫存。
-- 查詢模型與歷程查詢可以和寫入規則分開優化。
+<img src="./images/demo1.png" width="400" alt="DDD 分層架構示意圖">
 
-DDD 讓這些規則有明確的位置：
+### Domain
 
-- **Aggregate** 保護狀態轉換：`InboundOrder`、`OutboundOrder`、`Product`、`Stock`、`User`。
-- **Application Handler** 表達 use case：建立入庫單、確認出庫單、查詢庫存、註冊使用者。
-- **Domain Event** 表示服務內發生的重要業務事實。
-- **Integration Event** 表示跨服務需要同步的業務事實。
-- **Repository / Unit of Work** 將 persistence 細節隔離在基礎設施層。
+負責表示業務概念、業務規則，以及反應領域發生的事件，是 DDD 中的核心。該層只專注在業務，應該完全忽略基礎設施細節，例如 Database、Message Queue、Email 等等。
 
-## 架構
+#### Aggregate
 
-```text
-src/
-  Organization/
-    Api/             HTTP endpoints, auth, OpenAPI, health checks
-    Domain/          User, Role, Warehouse, RefreshToken
-    Infrastructure/  JWT, password hashing, Dapper repositories, seed data
+聚合（Aggregate）是 DDD 中的一種設計模式。
 
-  Ordering/
-    Api/             Product, inbound, outbound APIs
-    Application/     Commands, queries, event handlers, caching decorators
-    Domain/          Product, InboundOrder, OutboundOrder aggregates
-    Infrastructure/  PostgreSQL, Kafka, Redis, Outbox
+它是一組可以被視為單一整體（single unit）的領域物件（Domain Objects）。例如，一張訂單（Order）和它底下的訂單明細（OrderItem）是不同的物件，但在業務上，把「訂單連同所有明細」視為一個整體來管理會更加合理，因此它們共同組成一個聚合。
 
-  Inventory/
-    Api/             Stock APIs
-    Application/     Stock queries and integration event handlers
-    Domain/          Stock aggregate
-    Infrastructure/  PostgreSQL, Kafka, Inbox, Outbox
+聚合中的其中一個物件會被指定為聚合根（Aggregate Root）。任何來自聚合外部的參考，都只能指向聚合根，而不能直接存取聚合內部的其他物件。如此一來，聚合根便能負責維護整個聚合的一致性與完整性（Integrity）。
 
-  MessageContract/   跨服務 integration event contracts
-  SharedKernel/      AggregateRoot, Entity, domain event, UnitOfWork
-  Web/               React + Vite frontend
-```
+#### Entity
 
-### Runtime View
+具有明確身分（Identity）的物件。即使經過時間推移，或有不同的表示方式，它仍然是同一個物件。例如 Order，今天建立了一張訂單，Id 是 001，狀態是 Pending，明天訂單狀態為 Paid，他們還是同一個訂單，因為 Id 沒變。
 
-```mermaid
-flowchart LR
-  Web[React Web] --> Nginx[Nginx reverse proxy]
-  Nginx --> Org[Organization API]
-  Nginx --> Ord[Ordering API]
-  Nginx --> Inv[Inventory API]
+#### Value Object
 
-  Org --> OrgDb[(organization_db)]
-  Ord --> OrdDb[(ordering_db)]
-  Inv --> InvDb[(inventory_db)]
+與 Entity 相反，當一個物件沒有概念上的標識（conceptual identity），我們只關心值物件「是什麼」，而不關心它是「哪一個」。
 
-  Ord <--> Kafka[(Kafka)]
-  Inv <--> Kafka
-  Ord --> Redis[(Redis)]
+比如說 Money（100 元），我們不會去區分「這個 100 元」跟「那個 100 元」是不是同一個物件——只要兩個 Money 的金額與幣別相同（例如都是 100 元、TWD），就視為相等，可以互相替換。這種依「值」判斷相等，而不是依「身分」判斷相等，就是 Value Object 與 Entity 最根本的差異。
 
-  Org --> Jaeger[Jaeger / OTLP]
-  Ord --> Jaeger
-  Inv --> Jaeger
-```
+另外，Value Object 通常設計成不可變（Immutable）：一旦建立就不能修改內部狀態，如果需要「改變」，是建立一個新的 Value Object 取代舊的，而不是修改原本那個。
 
-### 事件流程
+### Application
+
+該層扮演「指揮家」的角色，負責定義軟體被期望完成的工作，並指揮 Domain Object 完成任務。它代表了對業務有意義的任務，或是與其他系統應用層互動的需求。
+
+Application 層本身不處理業務邏輯，而是協調工作流程，將實際工作委派給下一層——Domain Object——來完成。雖然它不保存反映業務情況的狀態，但可以保存反映任務處理進度的狀態，讓客戶端了解目前執行到哪個步驟。
+
+它也負責與其他系統的應用層進行必要的訊息交換，例如將 Domain Event 轉換成 Integration Event，通知其他服務。
+
+### Infrastructure
+
+Infrastructure 層為更高層級（Presentation、Application、Domain）提供技術能力，通常位於分層架構的最底層，作為技術支撐的基石。
+
+它處理的是純技術問題，包括資料持久化、訊息傳遞（Messaging）、事務（Transaction）管理、網路協定/檔案處理等等。
+
+Infrastructure 的功能雖然對系統運行至關重要，但它存在的目的是讓開發者能專注於核心領域（Core Domain）的設計，不被技術瑣事干擾。
+
+### Presentation
+
+Presentation 層是系統對外呈現與互動的介面，負責把使用者或外部系統的請求轉換成 Application 層看得懂的命令或查詢，再把結果轉換回使用者能理解的形式。它本身不包含業務邏輯，只負責溝通與轉譯。
+
+在這個專案裡，Presentation 層分成兩部分：
+
+- **Api**：HTTP endpoint，負責接收請求、驗證輸入、驗證身份與授權，轉交給 Application 層處理，再把結果序列化成回應。
+- **Web**：React 前端，透過 Api 與後端服務互動，提供倉管人員與工作人員操作介面。
+
+> Organization 服務因為職責單純（身份與使用者管理），沒有獨立的 Application 層，Handler 邏輯直接放在 Presentation 層。
+
+## Bounded Context
+
+依照 Bounded Context 拆分成三個獨立部署的服務：
+
+- Organization：身份、使用者、倉庫管理
+- Ordering：商品、入庫單、出庫單
+- Inventory：庫存狀態與異動
+
+服務與服務之間不共用資料庫，透過訊息契約（MessageContract）定義的 Kafka integration event 溝通。
+
+## Ordering ↔ Inventory 溝通
+
+Ordering 與 Inventory 不共用資料表，出庫單的庫存預留完全透過 Kafka integration event 非同步完成。整個流程拆成三個階段：入口同步請求、Outbox 非同步照布、Consumer 消費與狀態更新。
+
+### 1. 入口同步請求
+
+使用者建立出庫單時，Handler 與 Aggregate 的狀態變更、以及 Outbox 訊息的寫入，落在同一個資料庫交易裡。
 
 ```mermaid
 sequenceDiagram
   participant User
-  participant Ordering
-  participant Kafka
-  participant Inventory
+  participant Nginx
+  participant Ordering as Ordering API
+  participant DB as ordering_db
 
-  User->>Ordering: Create outbound order
-  Ordering->>Ordering: OutboundOrderCreatedDomainEvent
-  Ordering->>Kafka: OutboundOrderCreatedIntegrationEvent
-  Kafka->>Inventory: Consume order created
-  Inventory->>Inventory: TryReserve stock
-  alt stock available
-    Inventory->>Kafka: OutboundInventoryReservedIntegrationEvent
-    Kafka->>Ordering: Mark outbound order Pending
-  else stock insufficient
-    Inventory->>Kafka: OutboundInventoryReservationFailedIntegrationEvent
-    Kafka->>Ordering: Reject outbound order
+  User->>Nginx: HTTPS 建立出庫單
+  Nginx->>Ordering: 轉發請求
+  Ordering->>Ordering: Handler 驗證命令
+  Ordering->>DB: 同一交易寫入 OutboundOrder + Outbox
+  DB-->>Ordering: 寫入成功
+  Ordering-->>User: 201 Created (Processing)
+```
+
+### 2. Outbox 非同步照布
+
+Outbox Processor 定期輪詢資料庫，把未送出的訊息發布到 Kafka，成功後才標記為已送出，避免訊息遺失。
+
+```mermaid
+sequenceDiagram
+  participant DB as ordering_db
+  participant OP as Ordering Outbox Processor
+  participant Kafka
+
+  loop 定期輪詢
+    OP->>DB: 查詢未送出的 Outbox 訊息
+    DB-->>OP: OutboundOrderCreatedIntegrationEvent
+    OP->>Kafka: 發布事件
+    Kafka-->>OP: ack
+    OP->>DB: 標記為已送出
   end
 ```
 
-## 使用的設計模式
+### 3. Consumer 消費與狀態更新
 
-- **Bounded Context**：Organization、Ordering、Inventory 依業務能力切開。
-- **Clean Layering**：Domain 不依賴 API 或 Infrastructure。
-- **Minimal APIs**：Endpoint group 對應實際 use case。
-- **Outbox Pattern**：先把 integration message 寫入資料庫，再非同步發布到 Kafka。
-- **Inbox Pattern**：Inventory 消費事件時避免重複處理。
-- **Explicit Authorization Policies**：Admin、WarehouseAdmin、WarehouseUser 權限流程清楚分離。
-- **Read Optimization**：Ordering 使用 Redis 快取部分歷程查詢。
-- **Observability**：OpenTelemetry 追蹤 API、HTTP、PostgreSQL 與 messaging 活動。
+Inventory Consumer 透過 Inbox 記錄避免重複處理，嘗試預留庫存後，把結果發布回 Kafka；Ordering Consumer 再消費結果事件，更新出庫單狀態。
+
+```mermaid
+sequenceDiagram
+  participant Kafka
+  participant IC as Inventory Consumer
+  participant Inbox as inventory_db.Inbox
+  participant Agg as Stock Aggregate
+  participant OC as Ordering Consumer
+
+  Kafka->>IC: 消費 OutboundOrderCreatedIntegrationEvent
+  IC->>Inbox: 檢查是否已處理（去重）
+  alt 尚未處理
+    IC->>Agg: TryReserve 庫存
+    alt 庫存足夠
+      Agg-->>IC: 預留成功
+      IC->>Kafka: 發布 OutboundInventoryReservedIntegrationEvent
+    else 庫存不足
+      Agg-->>IC: 預留失敗
+      IC->>Kafka: 發布 OutboundInventoryReservationFailedIntegrationEvent
+    end
+    IC->>Inbox: 標記事件已處理
+  else 已處理過
+    IC->>IC: 略過（避免重複處理）
+  end
+  Kafka->>OC: 消費預留結果事件
+  OC->>OC: 更新 OutboundOrder 狀態（Pending / Rejected）
+```
+
+---
 
 ## 技術棧
 
-| 類別 | 技術 |
-| --- | --- |
-| Backend | .NET 11 preview, ASP.NET Core Minimal APIs |
-| Persistence | PostgreSQL, Dapper, SQL migrations |
-| Messaging | Kafka, Confluent.Kafka |
-| Cache | Redis |
-| Auth | JWT bearer tokens, RSA signing, JWKS endpoint |
-| Observability | OpenTelemetry, Jaeger |
-| Frontend | React, TypeScript, Vite, Tailwind CSS |
-| Testing | xUnit, WebApplicationFactory, Testcontainers |
-| Local runtime | Docker Compose |
+| 類別            | 技術              |
+|---------------|-----------------|
+| Backend       | .NET 11 preview |
+| Persistence   | PostgreSQL      |
+| Messaging     | Kafka           |
+| Cache         | Redis           |
+| Observability | OpenTelemetry   |
+| Frontend      | React           |
 
-> [!IMPORTANT]
-> 此專案目標框架是 `.NET 11 preview`。本機 build 或測試時請使用相容 SDK/runtime。
+## 部署架構
 
-## 快速開始
+- Terraform：管理雲端基礎設施
+- Kubernetes：容器編排與服務部署
+- Docker：容器化打包
+
+## 本地開發
 
 ### 前置需求
 
-- Docker and Docker Compose
-- .NET 11 preview SDK
-- Node.js 22+ and pnpm（若要在 Docker 外跑前端）
-- `curl` 與 `jq`（若要跑 smoke-test scripts）
+- Docker 與 Docker Compose
+- .NET 11 preview SDK（若要在 Docker 外執行/開發後端）
+- Node.js 22+ 與 pnpm（若要在 Docker 外跑前端）
 
-### 使用 Docker Compose 啟動
+### 環境變數與機密設定
 
-先建立或更新 `.env`，再啟動整套服務：
+專案根目錄需要一份 `.env`（已加入 `.gitignore`，不會被 git 追蹤），提供資料庫連線字串、JWT、Kafka、RSA 金鑰路徑等變數，`docker-compose.yml` 會讀取這些變數啟動各服務容器。
+
+若要在 Docker 外直接用 `dotnet run` 啟動單一服務（例如接本機 IDE debug），三個 Api 專案都已設定 `UserSecretsId`，機密值改用 [.NET User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) 管理，不寫進 `appsettings.json`：
+
+```bash
+cd src/Organization/Api
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=127.0.0.1;Port=5432;Username=postgres;Password=password;Database=organization_db"
+```
+
+### 啟動
 
 ```bash
 docker compose up --build
@@ -179,7 +215,7 @@ docker compose up --build
 | Kafka | localhost:9092 |
 | Redis | localhost:6379 |
 
-Health checks：
+Health check：
 
 ```bash
 curl http://localhost:5032/healthz
@@ -187,9 +223,9 @@ curl http://localhost:5116/healthz
 curl http://localhost:5205/healthz
 ```
 
-### OpenAPI
+### API 文件
 
-三個 API 都有 versioned OpenAPI 文件：
+三個服務都有 versioned OpenAPI 文件：
 
 ```text
 http://localhost:5032/openapi/v1.json
@@ -197,77 +233,16 @@ http://localhost:5116/openapi/v1.json
 http://localhost:5205/openapi/v1.json
 ```
 
-## Smoke Tests
+## Test
 
-`scripts/` 底下的腳本會用真實 HTTP request 跑主要業務流程。
-
-執行完整情境：
-
-```bash
-./scripts/run-all.sh
-```
-
-或執行單一端到端 happy path：
-
-```bash
-./scripts/happy-path-smoke-test.sh
-```
-
-Smoke path 會涵蓋：
-
-1. Admin 登入。
-2. 建立倉庫。
-3. 建立 WarehouseAdmin 與 WarehouseUser。
-4. 建立商品單位與商品。
-5. 建立並確認入庫單。
-6. 透過 Kafka 更新 Inventory 庫存。
-7. 建立出庫單並預留庫存。
-8. 查詢庫存驗證結果。
-
-## 測試策略
-
-測試依信心層級分開：
+使用 xUnit 作為測試框架，搭配 Testcontainers 管理測試所需的外部依賴（PostgreSQL、Kafka、Redis）。
 
 ```text
 tests/
-  UnitTests/         Domain 與聚焦的 application/infrastructure 行為
-  IntegrationTests/  Repository、Kafka、Redis、database 行為
-  ApiTests/          使用 WebApplicationFactory 驗證 HTTP endpoint 行為
+  UnitTests/         Domain 與聚焦的 application/infrastructure 行為，不依賴外部服務，執行速度快
+  IntegrationTests/  驗證 Repository、Kafka、Redis 等實際串接行為，透過 Testcontainers 啟動真實依賴
+  ApiTests/          使用 WebApplicationFactory 對 HTTP endpoint 做端對端驗證
 ```
 
-Integration/API tests 使用 Testcontainers 管理外部依賴，讓 domain tests 保持快速，也讓 persistence/messaging tests 更貼近真實環境。
+三個服務（Organization、Ordering、Inventory）各自擁有獨立的 UnitTest / IntegrationTest / ApiTest 專案。
 
-## 專案文件
-
-PlantUML 圖放在 `docs/`：
-
-```text
-docs/
-  organization/aggregates.puml
-  ordering/aggregates.puml
-  ordering/usecase/*.puml
-  inventory/aggregates.puml
-  inventory/usecase/*.puml
-```
-
-這些圖很適合用來跟主管或非工程角色說明 DDD model 與服務協作。
-
-## 推動 DDD 的重點
-
-- **業務語言直接出現在程式碼裡**：類別與 use case 對應倉庫、訂單、庫存語彙。
-- **變更影響範圍較小**：庫存規則可以演進，不需要直接改 Ordering 的資料表。
-- **跨服務整合是明確契約**：Kafka event contracts 說明服務如何協作。
-- **規則可測試**：aggregate state transition 不需要啟動整套系統就能驗證。
-- **技術細節可替換**：Dapper、Kafka、Redis、JWT 都是包在 domain 外層的 adapter。
-
-## 目前的取捨
-
-這是一個務實的 DDD 實作，不是框架展示：
-
-- SQL migrations 使用 plain `.sql` files。
-- Persistence 使用 Dapper，而不是 ORM。
-- Minimal APIs 讓 endpoint mapping 貼近 use case。
-- Message contracts 透過 project reference 共用，以換取開發速度。
-
-> [!TIP]
-> 若要往 production hardening 前進，下一步可以優先補強 domain validation、schema check constraints、多 instance Outbox locking、RSA key secret management，以及 CI 內的 tests/migrations 驗證。
